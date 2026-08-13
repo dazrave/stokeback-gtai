@@ -24,9 +24,19 @@ local state = {
     stashed    = 0,   -- through a safehouse door: the only number that scores
     taken      = 0,   -- lifted out of shops in total
     publicTaken = 0,  -- ...and how much of that the police have been told about
+    publicEmpty = {}, -- which shops the police KNOW are cleaned out
+    revealed   = {},  -- safehouses he has used: burned for the rest of the round
+    cashed     = {},  -- loot cars already cashed in, so none pays twice
     pettiest   = nil, -- the least dignified completed job, for the retelling
     events     = {},
 }
+
+-- Loot cars, by model hash. Built once: GetHashKey on every tick of every
+-- round for a dozen models is work nobody needs doing twice.
+local CAR_VALUES = {}
+for model, value in pairs((L.CARS and L.CARS.VALUES) or {}) do
+    CAR_VALUES[GetHashKey(model)] = { model = model, value = value }
+end
 
 local function setState(next)
     local merged = {}
@@ -86,6 +96,9 @@ function NickHeist.begin()
         stashed     = 0,
         taken       = 0,
         publicTaken = 0,
+        publicEmpty = {},
+        revealed    = {},
+        cashed      = {},
         pettiest    = nil,
         events      = {},
     }
@@ -101,6 +114,9 @@ function NickHeist.reset()
         stashed     = 0,
         taken       = 0,
         publicTaken = 0,
+        publicEmpty = {},
+        revealed    = {},
+        cashed      = {},
         pettiest    = nil,
         events      = {},
     }
@@ -136,7 +152,17 @@ local function publish(trigger)
     if when == 'never' then return end
     if when == 'alarm' and trigger ~= 'alarm' then return end
 
-    setState({ publicTaken = state.taken })
+    -- Which shops are cleaned out becomes public at exactly the same moments
+    -- as the money, and for the same reason: a site list that updated live
+    -- would let the police watch a shop empty in real time, which is a map pin
+    -- with extra steps. The auto-GPS reads this to route to unhit sites, so it
+    -- routes on what the force actually knows.
+    local empty = {}
+    for index, site in ipairs(state.sites) do
+        if site.left <= 0 then empty[index] = true end
+    end
+
+    setState({ publicTaken = state.taken, publicEmpty = empty })
 end
 
 local function endJob(reason)
@@ -283,7 +309,16 @@ function NickHeist.stash(index, pos)
     if state.carried <= 0 then return false, 'nothing in the bag' end
 
     local banked = state.carried
-    setState({ carried = 0, stashed = state.stashed + banked })
+
+    -- Reveal on use (plan §4.4). Not a ping that fades - the door stays on
+    -- their map for the rest of the round. It forces him to rotate, it builds
+    -- the police a chokepoint they earned, and it is the price of turning a
+    -- bag into a score.
+    local revealed = {}
+    for id in pairs(state.revealed) do revealed[id] = true end
+    if S.SAFEHOUSE_REVEAL_ON_USE then revealed[index] = true end
+
+    setState({ carried = 0, stashed = state.stashed + banked, revealed = revealed })
 
     if S.SAFEHOUSE_REVEAL_ON_USE then
         push({ kind = 'stash', index = index, name = house.name,
@@ -291,6 +326,52 @@ function NickHeist.stash(index, pos)
     end
 
     return true, banked
+end
+
+-- ===== cars as loot =====
+-- Plan §4.3. Nick something exotic and it rides on the ON YOU total at value
+-- x health%, so being rammed bleeds the payout in real time and a wreck is
+-- worth nothing at all. Read off the server's own copy of the vehicle, like
+-- everything else worth stealing.
+function NickHeist.carValue(vehicle)
+    if not L.CARS or not L.CARS.ENABLED then return nil end
+    if not vehicle or vehicle == 0 or not DoesEntityExist(vehicle) then return nil end
+    if state.cashed[vehicle] then return nil end
+
+    local entry = CAR_VALUES[GetEntityModel(vehicle)]
+    if not entry then return nil end
+
+    -- Vehicle entity health runs 0-1000 like body health does. A car being
+    -- shunted down the street is losing money by the second, which is exactly
+    -- the tension the plan asks for.
+    local health = math.min(1.0, math.max(0.0, GetEntityHealth(vehicle) / 1000.0))
+
+    return {
+        model = entry.model,
+        value = math.floor(entry.value * health),
+        full  = entry.value,
+        pct   = health,
+    }
+end
+
+-- Cashing one in is a safehouse job like any other bag. Same zone check, same
+-- authority: the server reads the car, the health and the position itself.
+function NickHeist.cashCar(vehicle, pos)
+    local house = NickHeist.nearHouse(pos)
+    if not house then return false, 'not at a safehouse' end
+
+    local car = NickHeist.carValue(vehicle)
+    if not car then return false, 'nobody is buying that' end
+    if car.value <= 0 then return false, 'that is scrap now' end
+
+    local cashed = {}
+    for id in pairs(state.cashed) do cashed[id] = true end
+    cashed[vehicle] = true
+
+    setState({ stashed = state.stashed + car.value, cashed = cashed })
+    push({ kind = 'car', value = car.value, model = car.model })
+
+    return true, car.value
 end
 
 -- Is this position inside (with slack) one of this round's safehouse zones?
@@ -308,13 +389,19 @@ end
 
 -- ===== what everyone else needs to know =====
 
-function NickHeist.purse()
+-- His numbers, and his alone. `vehicle` is whatever the server currently sees
+-- him sat in - a loot car rides on the ON YOU total until he cashes it or
+-- somebody writes it off.
+function NickHeist.purse(vehicle)
     local job  = state.job
     local site = job and state.sites[job.index]
+    local car  = vehicle and NickHeist.carValue(vehicle) or nil
 
     return {
         carried = state.carried,
         stashed = state.stashed,
+        car     = car,
+        onYou   = state.carried + (car and car.value or 0),
         job     = job and {
             name    = site and site.name,
             method  = job.method,
@@ -322,6 +409,30 @@ function NickHeist.purse()
             left    = site and site.left or 0,
         } or nil,
     }
+end
+
+-- The safehouses he has burned by using them, for the police map. Names and
+-- positions only, and only ones he has actually used - the other four stay
+-- his business.
+function NickHeist.revealedHouses()
+    local out = {}
+
+    for index in pairs(state.revealed) do
+        local house = state.houses[index]
+        if house then
+            out[#out + 1] = { name = house.name, x = house.x, y = house.y, z = house.z }
+        end
+    end
+
+    return out
+end
+
+-- Which shops the police know are cleaned out. Updated only when the money is
+-- (see publish), never live.
+function NickHeist.publicEmpty()
+    local out = {}
+    for index in pairs(state.publicEmpty) do out[#out + 1] = index end
+    return out
 end
 
 function NickHeist.stashed()

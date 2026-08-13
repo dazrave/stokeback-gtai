@@ -17,6 +17,7 @@ local state = {
     copSpawn    = nil,    -- this round's muster point, kept for late joiners
     lastContact = 'cold', -- for control's radio commentary
     radioAt     = 0,      -- next moment control is allowed to speak
+    heliOffered = false,  -- control has told them the favour is available
 }
 
 local function setState(next)
@@ -53,6 +54,20 @@ local function robberPos()
     return { x = at.x, y = at.y, z = at.z }
 end
 
+-- Whatever he is sat in, as the server sees it. A loot car's value hangs off
+-- this, so like his position it is read here rather than reported by him.
+local function robberVehicle()
+    if not state.robber then return nil end
+
+    local ped = GetPlayerPed(state.robber)
+    if not ped or ped == 0 or not DoesEntityExist(ped) then return nil end
+
+    local vehicle = GetVehiclePedIsIn(ped)
+    if not vehicle or vehicle == 0 or not DoesEntityExist(vehicle) then return nil end
+
+    return vehicle
+end
+
 -- ===== control, on the radio =====
 -- Police ears only, and dry on purpose. The robber never hears any of it:
 -- being told "they have lost you" would replace the pressure feeling with a
@@ -66,8 +81,15 @@ local function epithet()
     return list[1 + math.floor(NickSession.roll(101) * #list) % #list]
 end
 
+-- The gap lives HERE rather than at each call site. Control gained three new
+-- reasons to talk (patrol relays, the helicopter, witness calls) and a relay
+-- that flickers across the 120m boundary would have had him narrating every
+-- second of it. One voice, one throttle.
 local function radio(list)
     if not list or #list == 0 then return end
+    if GetGameTimer() < state.radioAt then return end
+
+    setState({ radioAt = GetGameTimer() + Config.flavour.RADIO_GAP_S * 1000 })
 
     local line = list[math.random(#list)]:format(epithet())
 
@@ -146,6 +168,7 @@ local function onStart()
 
     NickDetect.reset()
     NickHeist.begin()
+    NickEscalation.reset()
 
     -- The rota's pick moves over by hand - the 'robber' team is assign=false,
     -- so the framework's deal never touches it. Cross-team friendly fire then
@@ -171,6 +194,7 @@ local function onStart()
         copSpawn    = copSpawn,
         lastContact = 'cold',
         radioAt     = 0,
+        heliOffered = false,
     }
 
     local firstCop = nil
@@ -225,6 +249,35 @@ local function announce(events)
 
         elseif event.kind == 'exit' and event.reason == 'empty' and state.robber then
             TriggerClientEvent('nick:purseNote', state.robber, ('%s is cleaned out.'):format(event.name or 'The shop'))
+
+        elseif event.kind == 'car' then
+            tell(('He cashed a %s in somewhere. That is £%s of somebody else\'s car.'):format(
+                event.model or 'car', event.value or 0))
+
+        -- ===== escalation =====
+        elseif event.kind == 'relay' then
+            -- A patrol has him. Said on the radio rather than shown as a
+            -- different kind of dot, because the map treats every source the
+            -- same (pillar 1) and only the FEELING should differ.
+            radio(Config.flavour.RADIO_RELAY)
+
+        elseif event.kind == 'witness' then
+            TriggerClientEvent('nick:ping', -1, 'witness', event,
+                event.saw == 'swap' and 'Witness - changed cars here' or 'Witness - collision here')
+            radio(Config.flavour.RADIO_WITNESS)
+
+        elseif event.kind == 'heli' then
+            radio(Config.flavour.RADIO_HELI_UP)
+            tell('Air support called in. Twenty seconds of truth, and it is not coming back.')
+
+            -- The cosmetic helicopter is spawned by the robber's own client:
+            -- it is the machine that owns the airspace he is in, the same
+            -- reason chase spawns its units there. The PING does not depend on
+            -- it existing - the favour is information, the aircraft is theatre.
+            if state.robber then
+                TriggerClientEvent('nick:heliUp', state.robber)
+                TriggerClientEvent('nick:heliOverhead', state.robber)
+            end
         end
     end
 end
@@ -247,23 +300,51 @@ local function onTick()
     -- momentarily unreadable the merge keeps the last good fix.
     setState({ pos = robberPos() })
 
+    -- Patrol positions, the contact score, the helicopter's own clock and the
+    -- 999 calls that have finished ringing.
+    NickEscalation.tick(dt, state.pos, NickDetect.contact())
+
+    -- ONE DETECTION RULE (pillar 1). The bonus helicopter's ping and a patrol
+    -- car's proximity relay do not get a private line to the map: they produce
+    -- SIGHTINGS, exactly like a copper's eyeballs, so when the helicopter goes
+    -- home or the patrol falls behind the picture decays through the same
+    -- drifting circle instead of switching off. The air ping wins where both
+    -- are live, because it is the one that ignores cover.
+    if state.pos then
+        if NickEscalation.pinging() then
+            NickDetect.sighting(state.pos, 'air')
+        elseif NickEscalation.relaying() then
+            NickDetect.sighting(state.pos, 'patrol')
+        end
+    end
+
     -- The guess moves on whether anyone is looking or not. This is the whole
     -- mode: doubling back behind a building sends the circle the wrong way.
     NickDetect.tick(dt)
     NickHeist.tick(state.pos, dt)
     announce(NickHeist.drain())
+    announce(NickEscalation.drain())
 
     local remaining = math.max(0, math.ceil((state.endsAt - now) / 1000))
     local leader    = NickSession.leader()
     local mine      = state.robberName and NickSession.totalFor(state.robberName) or 0
 
+    local stars  = NickHeist.stars()
     local status = NickDetect.publish()
+
     status.phase       = state.phase
     status.remaining   = remaining
     status.robberId    = state.robber
     status.robberName  = state.robberName
     status.publicTaken = NickHeist.publicTaken()
-    status.stars       = NickHeist.stars()
+    status.stars       = stars
+    status.emptySites  = NickHeist.publicEmpty()
+    status.burned      = NickHeist.revealedHouses()
+
+    local escalation = NickEscalation.publish(stars)
+    status.patrolTarget = escalation.patrolTarget
+    status.relay        = escalation.relay
+    status.heliActive   = escalation.heliActive
 
     -- Control's commentary, one line per change of heart and never more often
     -- than RADIO_GAP_S. Only the changes worth a line: losing him, giving up
@@ -273,23 +354,18 @@ local function onTick()
     if status.contact ~= was then
         setState({ lastContact = status.contact })
 
-        if now >= state.radioAt then
-            local F = Config.flavour
-            local lines
+        local F = Config.flavour
+        local lines
 
-            if status.contact == 'soft' and was == 'hard' then
-                lines = F.RADIO_LOST
-            elseif status.contact == 'cold' and was == 'soft' then
-                lines = F.RADIO_COLD
-            elseif status.contact == 'hard' and was == 'cold' then
-                lines = F.RADIO_FOUND
-            end
-
-            if lines then
-                setState({ radioAt = now + F.RADIO_GAP_S * 1000 })
-                radio(lines)
-            end
+        if status.contact == 'soft' and was == 'hard' then
+            lines = F.RADIO_LOST
+        elseif status.contact == 'cold' and was == 'soft' then
+            lines = F.RADIO_COLD
+        elseif status.contact == 'hard' and was == 'cold' then
+            lines = F.RADIO_FOUND
         end
+
+        if lines then radio(lines) end -- radio() owns the throttle
     end
 
     -- The number that makes a spectator sport of it. Everyone sees it, which
@@ -304,7 +380,26 @@ local function onTick()
     -- His own numbers go to him and to nobody else: a carried total on a
     -- police HUD would be a live position update in disguise.
     if state.robber then
-        TriggerClientEvent('nick:purse', state.robber, NickHeist.purse())
+        TriggerClientEvent('nick:purse', state.robber, NickHeist.purse(robberVehicle()))
+    end
+
+    -- And the police get theirs. The lit helicopter button is deliberately NOT
+    -- in the shared status: "their heli is available" is the same sentence as
+    -- "they have completely lost you", and the pressure meter exists precisely
+    -- so he never gets told that in words.
+    local forPolice = NickEscalation.policePublish()
+
+    for _, src in ipairs(GetPlayers()) do
+        local id = tonumber(src)
+        if id and id ~= state.robber then
+            TriggerClientEvent('nick:police', id, forPolice)
+        end
+    end
+
+    -- Control offers the favour once, when it first becomes available.
+    if forPolice.heliReady and not state.heliOffered then
+        setState({ heliOffered = true })
+        radio(Config.flavour.RADIO_HELI_READY)
     end
 
     if remaining <= 0 then exports.core:EndGametype('time') end
@@ -343,6 +438,12 @@ local function onEnd(reason)
 
     setState({ phase = 'idle' })
     unvanishAll()
+
+    -- Half of the dual cleanup (plan §6, acceptance test 8): the clients bin
+    -- their own patrols and helicopter, and the server bins everything it was
+    -- told about regardless - so a client that crashed, left, or simply never
+    -- heard the round end cannot leak a single entity into the next one.
+    NickEscalation.sweep()
 
     -- Torn down by force (this resource or core going down): no drama, just
     -- make sure the next registration starts from idle.
@@ -394,109 +495,28 @@ local function onEnd(reason)
     end
 end
 
--- ===== what the clients tell us =====
--- Every handler here treats its client as a witness, never as an authority:
--- identity and phase are checked first, and any position that matters is read
--- off the server's own copy of the peds rather than out of the event.
+-- ===== the round, as the rest of this resource sees it =====
+-- server/orders.lua handles everything the clients send, and every one of
+-- those handlers needs to know the phase, who the robber is and where he
+-- actually is. They get accessors rather than the state itself: exactly one
+-- file owns the phase, and it is the one running the clock.
+NickRound = {
+    phase     = function() return state.phase end,
+    robber    = function() return state.robber end,
+    pos       = robberPos,
+    vehicle   = robberVehicle,
 
--- A copper laid eyes on him. The event is just "I can see him" - the server
--- reads the position off its OWN copy of his ped, so the one thing in the
--- whole mode that produces the truth can never be handed a lie. The range
--- check is the anti-cheat half: a client claiming a sighting from the other
--- side of the map is not looking at anything.
-RegisterNetEvent('nick:see', function()
-    local src = source
-    if state.phase ~= 'active' or src == state.robber then return end
+    -- His ped, already checked for existence - every handler that measures
+    -- anything wants the same three lines of guard.
+    robberPed = function()
+        if not state.robber then return nil end
 
-    local cop    = GetPlayerPed(src)
-    local robber = state.robber and GetPlayerPed(state.robber)
-    if not cop or cop == 0 or not robber or robber == 0 then return end
-    if not DoesEntityExist(robber) then return end
+        local ped = GetPlayerPed(state.robber)
+        if not ped or ped == 0 or not DoesEntityExist(ped) then return nil end
 
-    local at  = GetEntityCoords(robber)
-    local gap = #(GetEntityCoords(cop) - at)
-
-    -- Generous on purpose: SIGHT_AIR_RANGE is the longest legitimate look
-    -- and the client already enforces the real ground/air split. This only
-    -- has to stop the impossible.
-    if gap > Config.detection.SIGHT_AIR_RANGE * 1.3 then return end
-
-    NickDetect.sighting(at)
-end)
-
-RegisterNetEvent('nick:job', function(index, method)
-    local src = source
-    if state.phase ~= 'active' or src ~= state.robber then return end
-
-    local ok, why = NickHeist.startJob(tonumber(index) or 0, method, robberPos())
-    if not ok then
-        TriggerClientEvent('nick:purseNote', src, why or 'not happening')
-    end
-end)
-
-RegisterNetEvent('nick:stash', function(index)
-    local src = source
-    if state.phase ~= 'active' or src ~= state.robber then return end
-
-    local ok, banked = NickHeist.stash(tonumber(index) or 0, robberPos())
-    if ok then
-        TriggerClientEvent('nick:banked', src, banked)
-    else
-        TriggerClientEvent('nick:purseNote', src, banked or 'not happening')
-    end
-end)
-
--- "Call it a day": stood inside a safehouse, he can stop the round himself
--- and keep what he has banked. The nerve of leaving £4,000 in the bag to do
--- it is the joke. Checked here as well as on his screen, or a robber about
--- to be cuffed could end the round from the driver's seat and rob the law of
--- the arrest.
-RegisterNetEvent('nick:callItADay', function()
-    local src = source
-    if state.phase ~= 'active' or src ~= state.robber then return end
-    if not NickHeist.nearHouse(robberPos()) then return end
-
-    exports.core:EndGametype('called-it')
-end)
-
--- The client shows the prompt; the server checks the cuffs actually reach.
--- Without this any police client could end the round - and wipe the bag -
--- from the other side of the map. The SLACK halves of the numbers are the
--- latency allowance, so an honest arrest never bounces.
-RegisterNetEvent('nick:arrest', function()
-    local src = source
-    if state.phase ~= 'active' or src == state.robber then return end
-
-    local cop    = GetPlayerPed(src)
-    local robber = state.robber and GetPlayerPed(state.robber)
-    if not cop or cop == 0 or not robber or robber == 0 then return end
-    if not DoesEntityExist(robber) then return end
-
-    if #(GetEntityCoords(cop) - GetEntityCoords(robber))
-        > Config.arrest.RANGE * Config.arrest.RANGE_SLACK then return end
-    if #GetEntityVelocity(robber)
-        > Config.arrest.MAX_SPEED * Config.arrest.SPEED_SLACK then return end
-
-    TriggerEvent('core:stat', src, 'arrests', 1) -- season scoreboard
-    exports.core:EndGametype('arrested')
-end)
-
--- The dive. A routing bucket is the only way a player genuinely disappears
--- rather than merely being hard to see - the whole force can drive through
--- the doorway and never know. Granted by the server, and only ever stood in
--- a safehouse zone - checked against the server's own read of his position,
--- so a modded client cannot decide to be invisible on the open road.
-RegisterNetEvent('nick:vanish', function(hidden)
-    local src = source
-    if src ~= state.robber then return end
-
-    if hidden then
-        if state.phase ~= 'active' then return end
-        if not NickHeist.nearHouse(robberPos()) then return end
-    end
-
-    SetPlayerRoutingBucket(src, hidden and Config.safehouses.HIDDEN_BUCKET or 0)
-end)
+        return ped
+    end,
+}
 
 exports('getState', function()
     return {
@@ -510,6 +530,7 @@ end)
 AddEventHandler('onResourceStop', function(resource)
     if resource ~= GetCurrentResourceName() then return end
     unvanishAll()
+    NickEscalation.sweep() -- nothing this mode spawned outlives this mode
 end)
 
 -- ===== the declaration =====
@@ -520,6 +541,7 @@ local function register()
     if state.phase ~= 'idle' then
         setState({ phase = 'idle' })
         unvanishAll()
+        NickEscalation.sweep()
         tell('Core rebooted mid-round - round abandoned. /nick start to go again.')
     end
 
@@ -534,11 +556,12 @@ local function register()
             { id = 'robber', label = 'The Robber', assign = false },
         },
 
-        population   = 'alive',  -- a living city to hide in and to nick cars out of
-        -- 'off', not 'custom': night one has no AI police at all. The
-        -- escalation block in config.lua (AI cars per star, the relay, the
-        -- roadblocks) is the next build, and it flips this to 'custom'.
-        police       = 'off',
+        population   = 'alive',  -- a living city to hide in, nick cars out of, and be SEEN by
+
+        -- 'custom': core's NPC heat stays muted (the stock police would
+        -- arrest, shoot and end rounds - all three forbidden) and this mode
+        -- brings its own law instead. Ours cannot do any of those things.
+        police       = 'custom',
         friendlyFire = 'auto',   -- cross-team only: tyres pop, coppers can't wing each other
 
         clock = Config.round.CLOCK,

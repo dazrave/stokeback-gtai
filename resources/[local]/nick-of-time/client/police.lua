@@ -6,7 +6,7 @@
 -- ignores the two entities you name, so two people in cars have four bits of
 -- bodywork between them and a bumper-to-bumper pursuit never counts as a
 -- sighting), and check the screen as well as the distance.
-local blips = { track = nil, ring = nil, search = nil, radius = 0, sites = {}, pings = {} }
+local blips = { track = nil, ring = nil, search = nil, radius = 0, sites = {}, burned = {}, pings = {} }
 local fleet = SBM.tracker()
 
 local D = Config.detection
@@ -21,11 +21,14 @@ local function clearBlips()
     for _, blip in ipairs(blips.sites) do
         if DoesBlipExist(blip) then RemoveBlip(blip) end
     end
+    for _, blip in pairs(blips.burned) do
+        if DoesBlipExist(blip) then RemoveBlip(blip) end
+    end
     for _, ping in ipairs(blips.pings) do
         if DoesBlipExist(ping.blip) then RemoveBlip(ping.blip) end
     end
 
-    blips = { track = nil, ring = nil, search = nil, radius = 0, sites = {}, pings = {} }
+    blips = { track = nil, ring = nil, search = nil, radius = 0, sites = {}, burned = {}, pings = {} }
 end
 
 local function robberPed(status)
@@ -97,6 +100,30 @@ local function ensureSiteBlips()
     end
 end
 
+-- Reveal on use (plan §4.4). A safehouse he has banked at is burned for the
+-- rest of the round - not a ping that fades, a fixture on their map. It is
+-- what forces him to rotate, and what turns the last two minutes into a set of
+-- known doors the police can sit on.
+local function ensureBurnedBlips(status)
+    for _, house in ipairs(status.burned or {}) do
+        local key = ('%d:%d'):format(math.floor(house.x), math.floor(house.y))
+
+        if not (blips.burned[key] and DoesBlipExist(blips.burned[key])) then
+            local blip = AddBlipForCoord(house.x, house.y, house.z)
+            SetBlipSprite(blip, 1)
+            SetBlipColour(blip, 2) -- green: a door he has already used
+            SetBlipScale(blip, 0.85)
+            SetBlipAsShortRange(blip, false)
+            BeginTextCommandSetBlipName('STRING')
+            AddTextComponentString(('Known stash - %s'):format(house.name or 'doorway'))
+            EndTextCommandSetBlipName(blip)
+
+            blips.burned[key] = blip
+            NickHUD.notify('~g~That doorway is on your map now.~w~ He has to find another one.')
+        end
+    end
+end
+
 local function drawTrack(status)
     if not status.track then
         for _, key in ipairs({ 'track', 'ring', 'search' }) do
@@ -118,8 +145,11 @@ local function drawTrack(status)
     end
 
     SetBlipCoords(blips.track, status.track.x, status.track.y, status.track.z)
-    SetBlipRoute(blips.track, true)
-    SetBlipRouteColour(blips.track, 1)
+
+    -- The GPS line is NOT set here. client/gps.lua owns every route in this
+    -- mode, because the best thing to drive at is often not the suspect - it
+    -- is a sounding alarm, or a witness call, or the shop he has not hit yet -
+    -- and two files both setting routes would fight over the minimap.
 
     local hard = status.contact == 'hard'
     SetBlipFlashes(blips.track, hard)
@@ -181,6 +211,7 @@ CreateThread(function()
 
         if role == 'police' and status.phase and status.phase ~= 'idle' then
             ensureSiteBlips()
+            ensureBurnedBlips(status)
             drawTrack(status)
 
             local kept = {}
@@ -192,7 +223,8 @@ CreateThread(function()
                 end
             end
             blips.pings = kept
-        elseif blips.track or blips.search or #blips.sites > 0 or #blips.pings > 0 then
+        elseif blips.track or blips.search or #blips.sites > 0 or #blips.pings > 0
+            or next(blips.burned) then
             clearBlips()
         end
     end
@@ -204,9 +236,11 @@ RegisterNetEvent('nick:ping', function(kind, at, label)
     local role = NickState()
     if role ~= 'police' then return end
 
+    local COLOURS = { alarm = 5, stash = 2, witness = 3 } -- yellow, green, blue
+
     local blip = AddBlipForCoord(at.x, at.y, at.z)
     SetBlipSprite(blip, 161)
-    SetBlipColour(blip, kind == 'alarm' and 5 or 2)
+    SetBlipColour(blip, COLOURS[kind] or 5)
     SetBlipScale(blip, 0.9)
     SetBlipFlashes(blip, true)
     BeginTextCommandSetBlipName('STRING')
@@ -304,7 +338,12 @@ CreateThread(function()
     end
 end)
 
+-- The arrest, and the rung of the ladder just below it: hauling him out of a
+-- slowing car. Both are prompts on a copper who is ON FOOT, which is what
+-- makes the escalation ladder physical - you have to get out and walk over.
 CreateThread(function()
+    local clingMs = 0
+
     while true do
         Wait(0)
 
@@ -319,9 +358,40 @@ CreateThread(function()
             -- so the prompt works on a corpse too. Nicking the body is also
             -- funnier.
             if ped and not IsPedInAnyVehicle(me, false) then
-                local dist = #(GetEntityCoords(ped) - GetEntityCoords(me))
+                local theirs = GetVehiclePedIsIn(ped, false)
+                local dist   = #(GetEntityCoords(ped) - GetEntityCoords(me))
 
-                if dist < Config.arrest.RANGE and GetEntitySpeed(ped) < Config.arrest.MAX_SPEED then
+                if theirs ~= 0 then
+                    -- JACK, NEVER ENTER (plan §5.2). Note what this does NOT
+                    -- do: give this copper an enter-vehicle task. He is never
+                    -- offered the seat, so he can never end up driving off in
+                    -- the getaway car - the failure mode that would turn the
+                    -- best rung of the ladder into a farce.
+                    local slow = GetEntitySpeed(theirs) < Config.jack.MAX_SPEED
+                    local near = #(GetEntityCoords(theirs) - GetEntityCoords(me)) < Config.jack.RADIUS
+
+                    if slow and near then
+                        BeginTextCommandDisplayHelp('STRING')
+                        AddTextComponentSubstringPlayerName('~INPUT_PICKUP~ Get him out of there')
+                        EndTextCommandDisplayHelp(0, false, false, -1)
+
+                        if IsControlPressed(0, Config.controls.PRIMARY) then
+                            clingMs = clingMs + GetFrameTime() * 1000
+
+                            if clingMs >= Config.jack.HOLD_MS then
+                                clingMs = 0
+                                TriggerServerEvent('nick:jack')
+                            end
+                        else
+                            clingMs = 0
+                        end
+                    else
+                        clingMs = 0
+                    end
+
+                elseif dist < Config.arrest.RANGE and GetEntitySpeed(ped) < Config.arrest.MAX_SPEED then
+                    clingMs = 0
+
                     BeginTextCommandDisplayHelp('STRING')
                     AddTextComponentSubstringPlayerName('~INPUT_PICKUP~ Nick him')
                     EndTextCommandDisplayHelp(0, false, false, -1)
@@ -329,10 +399,66 @@ CreateThread(function()
                     if IsControlJustReleased(0, Config.controls.PRIMARY) then
                         TriggerServerEvent('nick:arrest')
                     end
+                else
+                    clingMs = 0
                 end
             end
         else
+            clingMs = 0
             Wait(500)
+        end
+    end
+end)
+
+-- Our half of the pull-out. The server only ever sends this to the copper who
+-- earned it, and it is animation and nothing else - the task that matters
+-- runs on the robber's own machine, which is the machine that owns his ped.
+RegisterNetEvent('nick:jackAnim', function()
+    local role = NickState()
+    if role ~= 'police' then return end
+
+    NickAnim(Config.jack.ANIM_DICT, Config.jack.ANIM_COP, Config.jack.ANIM_MS)
+    NickHUD.notify('~b~Out you come.')
+end)
+
+-- ===== calling the favour in =====
+-- One press, team-wide, one use. The button only exists while the team's
+-- contact score says they have genuinely lost him - it answers an INFORMATION
+-- deficit, which is why it must never be available at the same time as the
+-- rubber band, which answers a distance one (plan §5.3).
+CreateThread(function()
+    while true do
+        Wait(200)
+
+        local role, status = NickState()
+
+        if role == 'police' and status.phase == 'active' and NickPolice().heliReady then
+            if IsControlJustReleased(0, Config.controls.SECONDARY) then
+                TriggerServerEvent('nick:heliCall')
+            end
+        end
+    end
+end)
+
+-- OneSync culls distant players out of existence client-side, which would make
+-- a helicopter's whole job impossible - it would be flying over an empty city.
+-- The server hands airborne police a bigger bubble; this is the only thing
+-- that knows when to ask for one.
+CreateThread(function()
+    local airborne = false
+
+    while true do
+        Wait(2000)
+
+        local role, status = NickState()
+        local live = role == 'police' and status.phase and status.phase ~= 'idle'
+        local ped  = PlayerPedId()
+
+        local up = live and IsPedInAnyVehicle(ped, false) and IsPedInFlyingVehicle(ped)
+
+        if up ~= airborne then
+            airborne = up
+            TriggerServerEvent('nick:airborne', up and true or false)
         end
     end
 end)
@@ -348,6 +474,14 @@ end)
 -- acceptance criterion - so the safe half is the half we want anyway.
 CreateThread(function()
     local applied = { vehicle = 0, value = -1.0 }
+
+    local function handBack()
+        if applied.vehicle ~= 0 and DoesEntityExist(applied.vehicle) then
+            SetVehicleEnginePowerMultiplier(applied.vehicle, 0.0)
+            SetVehicleMaxSpeed(applied.vehicle, 0.0) -- 0 = its own engine back
+        end
+        applied = { vehicle = 0, value = -1.0 }
+    end
 
     while true do
         Wait(700)
@@ -372,21 +506,111 @@ CreateThread(function()
                 SetVehicleEnginePowerMultiplier(vehicle, value)
                 applied = { vehicle = vehicle, value = value }
             end
-        elseif applied.vehicle ~= 0 then
-            -- Hand the engine back, or the boost follows the car into free roam.
-            if DoesEntityExist(applied.vehicle) then
-                SetVehicleEnginePowerMultiplier(applied.vehicle, 0.0)
+
+            -- INSIDE the band start, the help stops and a CAP begins (plan
+            -- §5.1): close up, a police car may not go faster than the car it
+            -- is chasing, so the last two hundred metres are decided by
+            -- cornering, a cutoff or a burst tyre and never by horsepower -
+            -- which is acceptance test 3, written as a native.
+            --
+            -- The floor is what keeps that honest in the other direction: the
+            -- cap can never drop a cruiser below POLICE_SPEED_FLOOR_PCT of its
+            -- own top speed, so a robber deliberately dawdling in something
+            -- slow cannot drag the entire force down to walking pace with him
+            -- (acceptance test 6).
+            local theirs = robberPed(status)
+            local theirVehicle = theirs and GetVehiclePedIsIn(theirs, false) or 0
+
+            if gap < band.BAND_START_DISTANCE and theirVehicle ~= 0 then
+                local mineTop  = GetVehicleEstimatedMaxSpeed(vehicle)
+                local theirTop = GetVehicleEstimatedMaxSpeed(theirVehicle)
+
+                if mineTop > 0.0 and theirTop > 0.0 then
+                    SetVehicleMaxSpeed(vehicle, math.max(theirTop, mineTop * band.POLICE_SPEED_FLOOR_PCT))
+                end
+            else
+                SetVehicleMaxSpeed(vehicle, 0.0)
             end
-            applied = { vehicle = 0, value = -1.0 }
+        elseif applied.vehicle ~= 0 then
+            -- Hand the engine back, or the boost and the cap both follow the
+            -- car into free roam.
+            handBack()
         end
     end
 end)
 
 -- ===== a replacement motor =====
--- The scope asks for a cop to come back "at the nearest road with a
--- replacement vehicle". Standing in a field watching a pursuit you can hear is
--- not a round, so if a copper has been on foot with nothing drivable near them
--- for a moment, one turns up on the nearest road.
+-- Two ways a copper ends up stranded, one answer. Wrecking your car has to
+-- cost you the pursuit and not your evening: standing in a field listening to
+-- a chase you can hear and cannot reach is the fastest way to lose a player
+-- for ten minutes.
+local function dropRelief(at, announce)
+    local ok, node, heading = GetClosestVehicleNodeWithHeading(at.x, at.y, at.z, 1, 3.0, 0)
+    if not ok then return nil end
+
+    local hash = SBM.loadModel(Config.vehicles.POLICE[math.random(#Config.vehicles.POLICE)])
+    if not hash then return nil end
+
+    local car = CreateVehicle(hash, node.x, node.y, node.z + 0.5, heading, true, true)
+    SetModelAsNoLongerNeeded(hash)
+    if not DoesEntityExist(car) then return nil end
+
+    SetVehicleOnGroundProperly(car)
+    SetVehicleEngineOn(car, true, true, false)
+    SetVehicleDoorsLocked(car, 1) -- 1 = unlocked; a locked relief car is a cruel joke
+    fleet.track(car)
+
+    if announce then NickHUD.notify(announce) end
+    return car, node
+end
+
+-- Back on shift: core's respawn policy stands you up where you fell, and this
+-- moves you to the nearest ROAD with a fresh vehicle (plan §7, phase 3).
+-- Watched as a death->alive transition rather than hooked, because the policy
+-- lives in core and a mode should not be reaching into its resurrect.
+CreateThread(function()
+    local wasDead = false
+
+    while true do
+        Wait(500)
+
+        local role, status = NickState()
+        local ped  = PlayerPedId()
+        local dead = IsEntityDead(ped) or IsPedFatallyInjured(ped)
+
+        if role ~= 'police' or not status.phase or status.phase == 'idle' then
+            wasDead = false
+        elseif dead then
+            wasDead = true
+        elseif wasDead then
+            wasDead = false
+
+            if Config.police.RESPAWN_TO_ROAD then
+                -- Behind a fade, because a teleport plus a car appearing next
+                -- to you reads as a glitch at full brightness and as a lift
+                -- from control in the dark.
+                SBM.behindFade(function()
+                    local me = GetEntityCoords(ped)
+                    local car, node = dropRelief(me, nil)
+
+                    if node then
+                        SetEntityCoords(PlayerPedId(), node.x, node.y, node.z + 1.0,
+                            false, false, false, false)
+                    end
+
+                    if car and Config.police.RESPAWN_WITH_CAR and DoesEntityExist(car) then
+                        TaskWarpPedIntoVehicle(PlayerPedId(), car, -1)
+                    end
+                end)
+
+                NickHUD.notify('~b~Fresh motor, fresh start.~w~ Try not to.')
+            end
+        end
+    end
+end)
+
+-- The other stranding: you survived, your cruiser did not. Nothing drivable
+-- near you for a moment and one turns up on the nearest road.
 CreateThread(function()
     local onFootSince = 0
 
@@ -404,7 +628,7 @@ CreateThread(function()
             for _, vehicle in ipairs(GetGamePool('CVehicle')) do
                 if DoesEntityExist(vehicle) and not IsEntityDead(vehicle)
                     and IsVehicleSeatFree(vehicle, -1)
-                    and #(GetEntityCoords(vehicle) - me) < 30.0 then
+                    and #(GetEntityCoords(vehicle) - me) < Config.police.RELIEF_RADIUS then
                     nearby = true
                     break
                 end
@@ -415,27 +639,9 @@ CreateThread(function()
             else
                 if onFootSince == 0 then onFootSince = GetGameTimer() end
 
-                if GetGameTimer() - onFootSince > 10000 then
+                if GetGameTimer() - onFootSince > Config.police.RELIEF_AFTER_S * 1000 then
                     onFootSince = 0
-
-                    local ok, node, heading = GetClosestVehicleNodeWithHeading(
-                        me.x, me.y, me.z, 1, 3.0, 0)
-
-                    local hash = SBM.loadModel(
-                        Config.vehicles.POLICE[math.random(#Config.vehicles.POLICE)])
-
-                    if ok and hash then
-                        local car = CreateVehicle(hash, node.x, node.y, node.z + 0.5, heading, true, true)
-                        SetModelAsNoLongerNeeded(hash)
-
-                        if DoesEntityExist(car) then
-                            SetVehicleOnGroundProperly(car)
-                            SetVehicleEngineOn(car, true, true, false)
-                            SetVehicleDoorsLocked(car, 1)
-                            fleet.track(car)
-                            NickHUD.notify('~b~Relief car dropped off~w~ - it is on the road behind you.')
-                        end
-                    end
+                    dropRelief(me, '~b~Relief car dropped off~w~ - it is on the road behind you.')
                 end
             end
         else

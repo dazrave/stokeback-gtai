@@ -7,7 +7,8 @@
 local state = {
     role   = nil,
     status = {},
-    purse  = {},
+    purse  = {},  -- his numbers; only ever sent to him
+    police = {},  -- their numbers; only ever sent to them
     map    = { sites = {}, houses = {} },
 }
 
@@ -31,6 +32,13 @@ function NickPurse()
     return state.purse
 end
 
+-- The police-only half of the status. Kept out of the shared broadcast on
+-- purpose: "your helicopter is available" is the same sentence as "they have
+-- completely lost you", and he is never told that in words.
+function NickPolice()
+    return state.police
+end
+
 NickHUD = {}
 NickHUD.notify = SBM.notify
 NickHUD.shard  = SBM.shard
@@ -51,6 +59,25 @@ function NickHUD.money(value)
     end
 
     return '£' .. out
+end
+
+-- A paired animation, guarded. Both halves of the pull-out ask for this, and
+-- neither may ever depend on it: if the dictionary will not stream (a bad
+-- name, a slow disk, a stripped install) the interaction still has to happen,
+-- so this returns quietly and the ragdoll does the acting instead.
+function NickAnim(dict, clip, ms)
+    if not dict or not clip then return end
+
+    RequestAnimDict(dict)
+
+    local deadline = GetGameTimer() + 1200
+    while not HasAnimDictLoaded(dict) do
+        if GetGameTimer() > deadline then return end
+        Wait(25)
+    end
+
+    TaskPlayAnim(PlayerPedId(), dict, clip, 8.0, -8.0, ms or 1000, 0, 0.0, false, false, false)
+    RemoveAnimDict(dict)
 end
 
 local loadModel = SBM.loadModel
@@ -199,7 +226,7 @@ RegisterNetEvent('nick:role', function(role)
 
     DoScreenFadeIn(800)
 
-    setState({ role = role.isRobber and 'robber' or 'police', purse = {} })
+    setState({ role = role.isRobber and 'robber' or 'police', purse = {}, police = {} })
 
     if role.isRobber then
         NickHUD.shard('NICK OF TIME', 'Ten minutes. Only what you stash counts.')
@@ -221,6 +248,10 @@ RegisterNetEvent('nick:purse', function(purse)
     setState({ purse = purse or {} })
 end)
 
+RegisterNetEvent('nick:police', function(police)
+    setState({ police = police or {} })
+end)
+
 RegisterNetEvent('nick:purseNote', function(message)
     NickHUD.notify('~y~' .. tostring(message))
 end)
@@ -234,7 +265,7 @@ RegisterNetEvent('nick:end', function(result, robberName, stashed)
     -- merge is simply absent, so the old role survived the round - and the
     -- three maintenance loops below, all gated on state.role, kept running
     -- drive-by, damage and wanted-level overrides into free roam forever.
-    state = { role = nil, status = {}, purse = {}, map = { sites = {}, houses = {} } }
+    state = { role = nil, status = {}, purse = {}, police = {}, map = { sites = {}, houses = {} } }
 
     local shards = {
         arrested = { 'NICKED', ('Bag confiscated. %s kept %s.'):format(robberName or '?', NickHUD.money(stashed)) },
@@ -276,16 +307,31 @@ CreateThread(function()
                 SetVehicleWheelsCanBreak(vehicle, true)
                 SetVehicleCanBeVisiblyDamaged(vehicle, true)
                 SetVehicleStrong(vehicle, false)
-                SetDisableVehiclePetrolTankDamage(vehicle, false)
                 SetVehicleEngineCanDegrade(vehicle, true)
                 SetVehicleCanBreak(vehicle, true)
+
+                -- The one exception, and it is the robber's tank. GTA lights a
+                -- badly damaged petrol tank on its OWN schedule, which would
+                -- end rounds with a fireball nobody caused and no story to
+                -- tell. Clamped, so the only thing that ever sets the getaway
+                -- car alight is the damage ladder in robber.lua (plan §11).
+                if state.role == 'robber' then
+                    SetDisableVehiclePetrolTankDamage(vehicle, true)
+                    SetVehiclePetrolTankHealth(vehicle, Config.damage.PETROL_TANK_CLAMP)
+                else
+                    SetDisableVehiclePetrolTankDamage(vehicle, false)
+                end
             end
         end
     end
 end)
 
--- GTA's own stars stay off: the only police tonight are human, and this mode
--- draws its own star count off what he has stashed.
+-- GTA's own wanted system stays off and its stars stay on: the real one would
+-- spawn its own police (who would arrest, shoot and end rounds - all three
+-- forbidden by pillar 3), so the level is pinned at zero and the STARS are
+-- painted on top of it by hand off what he has actually stashed. He gets the
+-- glorious feeling of being at four stars with none of the stock dispatch
+-- behind it; the only law tonight is human plus our own patrols.
 CreateThread(function()
     while true do
         Wait(1000)
@@ -294,6 +340,24 @@ CreateThread(function()
             SetMaxWantedLevel(0)
             SetPlayerWantedLevel(PlayerId(), 0, false)
             SetPlayerWantedLevelNow(PlayerId(), false)
+
+            -- Nothing stock ever spawns (plan §5.4). Both of these have to be
+            -- re-asserted rather than set once: the engine turns them back on
+            -- across streaming and respawns.
+            SetCreateRandomCops(false)
+            SetCreateRandomCopsNotOnScenarios(false)
+            SetCreateRandomCopsOnScenarios(false)
+
+            for service = 1, 15 do
+                EnableDispatchService(service, false)
+            end
+
+            -- The fake stars are his and his alone: the police read his heat
+            -- off the HUD line, and a star on a copper's screen would just be
+            -- confusing.
+            if state.role == 'robber' then
+                SetFakeWantedLevel(state.status.stars or 0)
+            end
         end
     end
 end)
@@ -302,10 +366,15 @@ end)
 -- One line, top centre. The clock, then whichever truth belongs to your side:
 -- the police see what has been REPORTED taken, he sees what is actually in the
 -- bag. That gap is the mode.
+-- The map treats every source of a hard lock identically (pillar 1). The HUD
+-- does not: a copper who is LOOKING at him and a patrol car radioing him in
+-- should never feel like the same thing, even when the dot is the same dot.
 local CONTACT_LINES = {
-    hard = '~r~EYES ON',
-    soft = '~y~SEARCHING',
-    cold = '~c~NO CONTACT',
+    hard   = '~r~EYES ON',
+    patrol = '~o~PATROL HAS HIM',
+    air    = '~r~AIR SUPPORT - HE IS LIT UP',
+    soft   = '~y~SEARCHING',
+    cold   = '~c~NO CONTACT',
 }
 
 CreateThread(function()
@@ -321,8 +390,12 @@ CreateThread(function()
 
             local line
 
+            local second = nil
+
             if state.role == 'police' then
-                local contact = CONTACT_LINES[status.contact or 'cold'] or CONTACT_LINES.cold
+                local key = status.contact == 'hard' and (status.via == 'eyes' and 'hard' or status.via)
+                    or status.contact
+                local contact = CONTACT_LINES[key or 'cold'] or CONTACT_LINES.cold
 
                 if status.contact == 'soft' and status.unseenFor then
                     contact = ('~y~SEARCHING - %ds since anyone saw him'):format(status.unseenFor)
@@ -330,11 +403,29 @@ CreateThread(function()
 
                 line = ('%s   ~w~reported taken %s%s'):format(
                     contact, NickHUD.money(status.publicTaken or 0), stars)
+
+                -- The favour, when it is theirs to call. Only ever on their
+                -- screens: see NickPolice().
+                if state.police.heliReady then
+                    second = '~b~AIR SUPPORT AVAILABLE~w~ - press ~INPUT_DETONATE~'
+                end
             else
                 local purse = state.purse
 
-                line = ('~y~bag %s   ~g~stashed %s%s'):format(
-                    NickHUD.money(purse.carried or 0), NickHUD.money(purse.stashed or 0), stars)
+                -- ON YOU and STASHED, the two numbers the whole mode is about.
+                -- ON YOU includes whatever the car under him is worth at its
+                -- current health, so being rammed visibly costs him money.
+                line = ('~y~ON YOU %s   ~g~STASHED %s%s'):format(
+                    NickHUD.money(purse.onYou or purse.carried or 0),
+                    NickHUD.money(purse.stashed or 0), stars)
+
+                -- What the next safehouse run is actually worth. His alone -
+                -- on a police HUD this number would be a live position update
+                -- in disguise, which acceptance test 9 exists to forbid.
+                local onYou = purse.onYou or purse.carried or 0
+                if onYou > 0 then
+                    second = ('~g~IF YOU BANK +%s'):format(NickHUD.money(onYou))
+                end
             end
 
             local delta = ''
@@ -345,6 +436,10 @@ CreateThread(function()
             end
 
             NickHUD.draw(clock .. '   ' .. line .. delta, Config.hud.x, Config.hud.y)
+
+            if second then
+                NickHUD.draw(second, Config.hud.x, Config.hud.y + 0.032, Config.hud.scale * 0.8)
+            end
         else
             Wait(400)
         end

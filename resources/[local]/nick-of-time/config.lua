@@ -102,6 +102,53 @@ Config = {
         MIN_RAM_DAMAGE   = 15.0,
         STUTTER_EVERY_MS = 1800, -- gap between coughs, or it is simply undriveable
 
+        -- (+) The plan's ladder, in full: burst/ram -> degrade -> STOP -> pull
+        -- out -> foot chase -> tase -> arrest. The "stop" rung was missing;
+        -- she used to cough all the way to the fireball. Now the engine
+        -- actually gives up at the bottom, and the fire is what happens to a
+        -- car that is already dead and still being rammed.
+        DEAD_ENGINE_THRESHOLD = 0.02, -- engine fraction at or below: cuts out for good
+
+        -- (+) GTA lights a badly damaged petrol tank on its own schedule,
+        -- which would end rounds with a random fireball nobody caused. The
+        -- tank is clamped so the ONLY thing that ever sets her alight is the
+        -- ladder above (plan §11, "GTA self-igniting damaged vehicles").
+        PETROL_TANK_CLAMP = 1000.0,
+
+        -- (+) Plan §5.2: the blast throws him clear. It is the safety
+        -- requirement AND the joke, so it is not optional - a fireball that
+        -- killed him would end the round in a way the scope never lists.
+        ROBBER_EXPLOSION_PROOF = true,
+
+        -- (+) Plan §5.2 again: guns become tyre tools by construction. He
+        -- cannot be shot out of the driver's seat, so a pursuit ends by
+        -- stopping the car, not by emptying a magazine through the rear
+        -- windscreen. On foot he is still shootable (the floor keeps him
+        -- alive) - full bulletproofing is one knob away once the taser has
+        -- had a night out.
+        ROBBER_SHOT_IN_VEHICLE = false,
+    },
+
+    -- ===== the pull-out =====
+    -- (+) Plan §5.2, "jack, never enter": the cop is NEVER given an enter task,
+    -- so he can never end up sat in the robber's seat wearing his getaway car.
+    -- The whole interaction is a task on the ROBBER'S ped (his own machine owns
+    -- it) plus a paired animation, and the cop is left stood in the road
+    -- looking pleased with himself.
+    jack = {
+        RADIUS      = 4.5,  -- cop on foot this close to the car...
+        MAX_SPEED   = 8.0,  -- ...doing under about 18mph
+        HOLD_MS     = 600,  -- at the window this long before the door opens
+        LEAVE_FLAGS = 4160, -- TaskLeaveVehicle: jacked out, door left swinging
+        RAGDOLL_MS  = 1500, -- and onto the tarmac
+
+        -- Paired animation, guarded: if the dictionary will not stream the
+        -- ragdoll still sells it, so a missing anim can never eat the arrest.
+        ANIM_DICT   = 'random@mugging3',
+        ANIM_COP    = 'struggle_loop_a_thief',
+        ANIM_ROBBER = 'struggle_loop_a_victim',
+        ANIM_MS     = 1200,
+
         -- (+) What she says while she dies, in order, looping. The car's
         -- decline getting its own commentary is half the reason anyone tells
         -- the story afterwards.
@@ -139,6 +186,24 @@ Config = {
             cornerShop = { label = 'Convenience store', stock = 9000 },
         },
         DEFAULT_TIER = 'cornerShop',
+
+        -- (+) Plan §4.3, cars as loot. Nick something exotic and it rides on
+        -- your ON YOU total at value x health%, so being rammed bleeds the
+        -- payout in real time and a wreck is worth nothing. Model names, not
+        -- coordinates - nothing here needs the tag board.
+        --
+        -- Cashing one in is a safehouse job like any other bag: it is the
+        -- getting there that costs you, because you are driving the most
+        -- conspicuous car in Los Santos with the entire force looking for you.
+        CARS = {
+            ENABLED = true,
+            VALUES  = {
+                adder      = 45000, zentorno   = 40000, t20      = 42000,
+                osiris     = 38000, italigtb   = 36000, entityxf = 35000,
+                nero       = 34000, pfister811 = 33000, tempesta = 32000,
+                reaper     = 30000, comet2     = 18000, banshee  = 16000,
+            },
+        },
     },
 
     -- ===== safehouses =====
@@ -156,24 +221,87 @@ Config = {
     },
 
     -- ===== escalation =====
-    -- Night one has no AI police at all (the descriptor says police = 'off'),
-    -- so the stars are a number on the HUD and a reason the safehouse you just
-    -- used is now on their map. The AI half of this block is the next build.
+    -- Greed is the game (pillar 4): every star he earns is a star he chose to
+    -- earn by banking instead of running. And pillar 3 is absolute - none of
+    -- the machinery below can arrest, shoot, or end a round. It exists to
+    -- generate INFORMATION and PRESSURE for the humans, nothing else.
     escalation = {
-        VALUE_PER_STAR             = 10000,
-        AI_CARS_PER_STAR           = 1,    -- (wishlist)
-        AI_CARS_MAX                = 6,    -- (wishlist)
-        AI_RELAY_RADIUS            = 120,  -- (wishlist)
-        BONUS_HELI_CONTACT_THRESH  = 0.15, -- (wishlist)
-        BONUS_HELI_PING_S          = 20,   -- (wishlist)
-        BONUS_HELI_USES_PER_ROUND  = 1,    -- (wishlist)
-        ROADBLOCK_START_S          = 420,  -- (wishlist) 7:00
-        ROADBLOCK_REQUIRES_PURSUIT = true, -- (wishlist)
-        ROADBLOCK_MAP_WARNING_S    = 5,    -- (wishlist)
+        VALUE_PER_STAR   = 10000,
+        AI_CARS_PER_STAR = 1,
+        AI_CARS_MAX      = 6,
+        AI_RELAY_RADIUS  = 120, -- while a patrol is this close he is on the humans' maps
 
-        -- (+) How long an alarm or a stash ping sits on the map before the
-        -- trail it represents is stale enough to be a lie.
+        BONUS_HELI_CONTACT_THRESH = 0.15, -- team contact score below this unlocks it
+        BONUS_HELI_PING_S         = 20,
+        BONUS_HELI_USES_PER_ROUND = 1,
+
+        ROADBLOCK_START_S          = 420,  -- (blocked on tagging: chokepoints)
+        ROADBLOCK_REQUIRES_PURSUIT = true, -- (blocked on tagging)
+        ROADBLOCK_MAP_WARNING_S    = 5,    -- (blocked on tagging)
+
+        -- (+) How long an alarm, a witness call or a stash ping sits on the
+        -- map before the trail it represents is stale enough to be a lie.
         PING_LIFE_MS = 45000,
+
+        -- (+) The patrols themselves. Unarmed, neutral, follow-only, and
+        -- capped hard: CPointRoute has FORTY route slots for the entire game
+        -- and every vehicle on a navmesh task holds one, so six is a budget
+        -- decision as much as a balance one (AGENTS.md, the gotcha that
+        -- hard-crashes clients).
+        AI_MODELS           = { 'police', 'police2', 'police3' },
+        AI_DRIVER           = 's_m_y_cop_01',
+        AI_SPAWN_DISTANCE   = { 130.0, 240.0 }, -- far enough not to appear in his mirror
+        AI_DESPAWN_DISTANCE = 420.0,
+        AI_SPAWN_EVERY_MS   = 12000, -- they arrive over time, never all at once
+        AI_FOLLOW_OFFSET    = 25.0,  -- they hang back: a tail, not a ram
+        AI_RETASK_MS        = 9000,  -- a vehicle task quietly expires; re-issue it
+
+        -- (+) The bonus heli. Cosmetic AI, high, one pass, then it goes home.
+        -- Its ping is UNCONDITIONAL (plan §5.3): it is a rare lifeline earned
+        -- by a team that has genuinely lost him, and a lifeline that respects
+        -- cover would be no lifeline at all.
+        BONUS_HELI_MODEL  = 'polmav',
+        BONUS_HELI_PILOT  = 's_m_y_cop_01',
+        BONUS_HELI_HEIGHT = 65.0,
+        BONUS_HELI_LIFE_S = 32, -- outlives the ping by a beat, then leaves
+
+        -- (+) Contact score: the share of the round the force has actually
+        -- had a hold of him, counting eyes-on AND merely being near him. Low
+        -- score = they are chasing a rumour = the heli unlocks.
+        CONTACT_NEAR_M   = 150.0,
+        CONTACT_MIN_S    = 60, -- no unlock in the opening minute; it is not a start bonus
+
+        -- (+) OneSync culls distant players out of existence client-side,
+        -- which would make a helicopter's whole job impossible. Airborne
+        -- police get a bigger bubble (plan §5.3).
+        CULLING_RADIUS_AIR = 1200.0,
+    },
+
+    -- ===== witness-modelled incident calls =====
+    -- (+) Plan §3.4. A crash only gets phoned in if somebody was actually
+    -- there to see it: empty docks at 3am, silence; Vespucci Beach, instant
+    -- call. The call reports a POINT and never a direction - two of them let
+    -- the police work out a bearing themselves, which is skill rather than a
+    -- handout. This is the whole reason the city is left populated.
+    witness = {
+        ENABLED      = true,
+        RADIUS       = 70.0, -- an NPC this close, with a clear look at him
+        MAX_CHECKED  = 10,   -- peds tested per incident; keep it off the frame budget
+        CRASH_DAMAGE = 40.0, -- body health lost in one go to count as a crash
+        DELAY_S      = { 5, 15 }, -- a 999 call takes a moment to reach anyone
+        GAP_S        = 25,   -- at most one call per this, or a bad driver is a tracker
+    },
+
+    -- ===== auto-GPS =====
+    -- (+) Plan §5.6. The police radio never says "he is at X" - the route line
+    -- does, off the best thing currently known. The ladder is strict priority
+    -- with hysteresis, so it cannot flap between two near-equal leads and turn
+    -- the minimap into a strobe.
+    gps = {
+        ENABLED            = true,
+        HOLD_MS            = 6000,  -- stay on a target at least this long
+        WITNESS_FRESH_S    = 15,    -- a call older than this stops being a lead
+        MANUAL_SUPPRESS_MS = 20000, -- a hand-placed waypoint wins, for a bit
     },
 
     -- ===== robber awareness =====
@@ -184,7 +312,13 @@ Config = {
         PRESSURE_RADIUS          = 400,
         PRESSURE_STATES          = 3,
         PRESSURE_UPDATE_DELAY_MS = 1500,
-        PRESSURE_AI_CONTRIBUTION = 0.33, -- (wishlist) no AI to contribute yet
+
+        -- Density, not distance, and the AI half is capped: at five stars the
+        -- bar must still have somewhere to go when a HUMAN turns the corner.
+        -- A meter pegged by patrols would tell him nothing and cost him the
+        -- one warning that matters.
+        PRESSURE_AI_CONTRIBUTION = 0.33,
+
         ROBBER_INFINITE_STAMINA  = true, -- the foot chase should end in a taser, not a wheeze
     },
 
@@ -252,12 +386,22 @@ Config = {
     },
 
     -- Cops are never out of the round: wrecking your car costs you the chase,
-    -- not the evening.
+    -- not the evening. Plan §7 phase 3: back on the nearest road, with a
+    -- fresh vehicle, ~15 seconds later.
     police = {
-        RESPAWN_S = 15,
+        RESPAWN_S        = 15,
+        RESPAWN_TO_ROAD  = true, -- dying in a field must not end your evening
+        RESPAWN_WITH_CAR = true,
+
+        -- The other way to end up stranded: you survived, your cruiser did
+        -- not. Nothing drivable within RELIEF_RADIUS for this long and one
+        -- turns up on the nearest road.
+        RELIEF_AFTER_S = 10,
+        RELIEF_RADIUS  = 30.0,
     },
 
-    -- E to work / stash, G for the loud option and for calling it a day.
+    -- E to work / stash / nick him, G for the loud option, for calling it a
+    -- day, and for calling in the favour.
     controls = {
         PRIMARY   = 38, -- INPUT_PICKUP (E)
         SECONDARY = 47, -- INPUT_DETONATE (G)
@@ -298,6 +442,28 @@ Config = {
             'EYES ON %s. All units - and try to keep them this time.',
             'that is him. That is actually him. Go, go.',
             'contact re-established. Nobody put the last five minutes in the report.',
+        },
+
+        -- The escalation, narrated. A patrol relay is control reading someone
+        -- else's sighting off a radio - it should never feel like the same
+        -- thing as a copper actually looking at him.
+        RADIO_RELAY = {
+            'a unit has %s in sight. Not one of ours, but we will take it.',
+            'patrol reports %s in the area. They will not stop him. You will.',
+            'somebody with a radio can see %s. Move.',
+        },
+        RADIO_HELI_UP = {
+            'air support is up and has %s. Twenty seconds. Do not waste them.',
+            'eye in the sky, %s lit up. Go now, this will not last.',
+        },
+        RADIO_HELI_READY = {
+            'we can get you air support. Somebody press the button.',
+            'the helicopter is fuelled and the pilot is bored. Say the word.',
+        },
+        RADIO_WITNESS = {
+            'member of the public phoned something in. Point on your map.',
+            '999 call from a witness. No direction, just a postcode.',
+            'someone saw something. They were not helpful about which way.',
         },
 
         -- The end-of-round paperwork: the take read out like an insurance

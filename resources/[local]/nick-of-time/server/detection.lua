@@ -24,6 +24,7 @@ local D = Config.detection
 
 local state = {
     contact     = 'cold',
+    via         = nil, -- what produced the last sighting: eyes | patrol | air
     lastSeen    = nil, -- truth, as at the last sighting
     lastSeenAt  = 0,
     heading     = nil, -- degrees, the way he was travelling between sightings
@@ -47,6 +48,7 @@ end
 function NickDetect.reset()
     state = {
         contact     = 'cold',
+        via         = nil,
         lastSeen    = nil,
         lastSeenAt  = 0,
         heading     = nil,
@@ -72,10 +74,13 @@ local function forwardOf(heading)
     return -math.sin(rad), math.cos(rad)
 end
 
--- Somebody has eyes on him. Shared by every copper on the ground (and, when
--- the piloted helicopter lands on the wishlist, by that too): a sighting is a
--- sighting, it snaps the guess back onto the truth and re-reads his direction.
-function NickDetect.sighting(coords)
+-- Somebody has him. ONE detection rule (pillar 1): a copper's raycast, a
+-- patrol car's proximity relay and the bonus helicopter's ping all arrive
+-- here, all snap the guess back onto the truth, and all decay through the same
+-- drifting circle the moment they stop. `via` only changes what the HUD calls
+-- it - "eyes on" and "a patrol has him" should never feel identical, even
+-- though the map treats them the same.
+function NickDetect.sighting(coords, via)
     local now = GetGameTimer()
 
     local heading, speed = state.heading, state.speed
@@ -102,6 +107,7 @@ function NickDetect.sighting(coords)
 
     setState({
         contact     = 'hard',
+        via         = via or 'eyes',
         lastSeen    = { x = coords.x, y = coords.y, z = coords.z },
         lastSeenAt  = now,
         heading     = heading,
@@ -164,6 +170,7 @@ function NickDetect.publish()
     if state.contact == 'hard' then
         return {
             contact   = 'hard',
+            via       = state.via or 'eyes',
             track     = state.lastSeen,
             radius    = 0.0,
             heading   = state.heading,

@@ -113,9 +113,24 @@ CreateThread(function()
             local onFoot = not IsPedInAnyVehicle(ped, false)
 
             local site  = onFoot and nearest(map.sites, Config.looting.ZONE_RADIUS) or nil
-            local house = onFoot and nearest(map.houses, Config.safehouses.ZONE_RADIUS) or nil
+            -- The safehouse zone works from behind the wheel too, but only for
+            -- one thing: driving a nicked exotic through the door is the whole
+            -- of cars-as-loot. Stashing, diving and calling it a day all still
+            -- mean getting out.
+            local house = nearest(map.houses, Config.safehouses.ZONE_RADIUS)
 
-            if purse.job then
+            if not onFoot and house and purse.car then
+                help(('~INPUT_PICKUP~ Cash in the %s ~w~- %s (%d%% of her left)'):format(
+                    purse.car.model or 'car', NickHUD.money(purse.car.value), math.floor(purse.car.pct * 100)))
+
+                if IsControlJustReleased(0, Config.controls.PRIMARY) then
+                    TriggerServerEvent('nick:cashCar')
+                end
+
+            elseif not onFoot then
+                -- Behind the wheel and not at a safehouse: no prompts at all.
+
+            elseif purse.job then
                 -- Already at it. The only decision left is when to leave, and
                 -- the alarm state is the only hint he gets about that.
                 help(purse.job.alarmed
@@ -198,6 +213,26 @@ CreateThread(function()
     end
 end)
 
+-- ===== hauled out of the car =====
+-- The other half of "jack, never enter". The copper who pressed the button
+-- gets an animation; the actual leaving happens HERE, on the machine that owns
+-- this ped, because a task issued on somebody else's ped is a suggestion at
+-- best and a desync at worst.
+RegisterNetEvent('nick:jacked', function()
+    local role, status = NickState()
+    if role ~= 'robber' or status.phase ~= 'active' then return end
+
+    local ped     = PlayerPedId()
+    local vehicle = GetVehiclePedIsIn(ped, false)
+    if vehicle == 0 then return end
+
+    NickHUD.notify('~r~THEY HAVE GOT THE DOOR OPEN.')
+    NickAnim(Config.jack.ANIM_DICT, Config.jack.ANIM_ROBBER, Config.jack.ANIM_MS)
+
+    TaskLeaveVehicle(ped, vehicle, Config.jack.LEAVE_FLAGS)
+    SetPedToRagdoll(ped, Config.jack.RAGDOLL_MS, Config.jack.RAGDOLL_MS, 0, true, true, false)
+end)
+
 -- ===== pressure =====
 -- He never sees the police on his map. He gets a feeling, and a late one:
 -- three states, delayed by PRESSURE_UPDATE_DELAY_MS, so he is always reacting
@@ -214,6 +249,7 @@ CreateThread(function()
             if GetGameTimer() >= memo.pressureAt then
                 memo.pressureAt = GetGameTimer() + Config.pressure.PRESSURE_UPDATE_DELAY_MS
 
+                local P     = Config.pressure
                 local me    = GetEntityCoords(PlayerPedId())
                 local close = 0
 
@@ -221,13 +257,21 @@ CreateThread(function()
                     if id ~= PlayerId() then
                         local ped = GetPlayerPed(id)
                         if DoesEntityExist(ped)
-                            and #(GetEntityCoords(ped) - me) < Config.pressure.PRESSURE_RADIUS then
+                            and #(GetEntityCoords(ped) - me) < P.PRESSURE_RADIUS then
                             close = close + 1
                         end
                     end
                 end
 
-                memo.pressure = math.min(Config.pressure.PRESSURE_STATES - 1, close)
+                -- The AI half, capped hard. At five stars the bar must still
+                -- have somewhere to go when a HUMAN comes round the corner -
+                -- a meter pegged by patrols would cost him the one warning
+                -- that actually matters. A third of the bar, and not a pixel
+                -- more, however many of them are out there.
+                local ceiling = (P.PRESSURE_STATES - 1) * P.PRESSURE_AI_CONTRIBUTION
+                local ai      = math.min(NickPatrolCount(P.PRESSURE_RADIUS) * P.PRESSURE_AI_CONTRIBUTION, ceiling)
+
+                memo.pressure = math.min(P.PRESSURE_STATES - 1, math.floor(close + ai))
             end
         else
             memo.pressure = 0
@@ -242,13 +286,58 @@ CreateThread(function()
         local role, status = NickState()
 
         if role == 'robber' and status.phase == 'active' then
+            -- Third line down: the clock is first, "IF YOU BANK" is second
+            -- (main.lua), and the feeling is last.
             NickHUD.draw(PRESSURE_LINES[memo.pressure + 1] or PRESSURE_LINES[1],
-                Config.hud.x, Config.hud.y + 0.04, Config.hud.scale * 0.85)
+                Config.hud.x, Config.hud.y + 0.064, Config.hud.scale * 0.85)
         else
             Wait(400)
         end
     end
 end)
+
+-- ===== witnesses =====
+-- Plan §3.4. A crash only gets phoned in if somebody was actually there to see
+-- it: empty docks at 3am, silence; Vespucci Beach at dusk, instant call. This
+-- is the entire reason the mode leaves the city populated instead of emptying
+-- it - the NPCs are not scenery, they are the intelligence network.
+--
+-- Deliberately cheap: only peds already inside the radius get a raycast, and
+-- only up to MAX_CHECKED of them, because this fires in the same frame as a
+-- crash and a crash is the worst possible moment to drop twenty milliseconds.
+local witnessAt = 0
+
+function NickWitness(kind)
+    if not Config.witness.ENABLED then return end
+    if GetGameTimer() < witnessAt then return end
+
+    local ped     = PlayerPedId()
+    local me      = GetEntityCoords(ped)
+    local checked = 0
+    local seen    = false
+
+    for _, other in ipairs(GetGamePool('CPed')) do
+        if checked >= Config.witness.MAX_CHECKED then break end
+
+        if DoesEntityExist(other) and other ~= ped
+            and not IsPedAPlayer(other) and not IsEntityDead(other)
+            and #(GetEntityCoords(other) - me) < Config.witness.RADIUS then
+            checked = checked + 1
+
+            if HasEntityClearLosToEntity(other, ped, Config.detection.LOS_FLAGS) then
+                seen = true
+                break
+            end
+        end
+    end
+
+    if not seen then return end
+
+    -- The gap is held here as well as on the server: a bad driver in a busy
+    -- street would otherwise be a live tracker with extra steps.
+    witnessAt = GetGameTimer() + Config.witness.GAP_S * 1000
+    TriggerServerEvent('nick:witness', kind)
+end
 
 -- ===== the getaway car's slow public death =====
 -- She coughs, she catches, and then she puts him across a pavement in front of
@@ -261,7 +350,7 @@ CreateThread(function()
         Wait(500)
 
         if not isRobber() then
-            memo.lastVehicle, memo.hits, memo.onFire = 0, 0, false
+            memo.lastVehicle, memo.hits, memo.onFire, memo.dead = 0, 0, false, false
         else
             local ped     = PlayerPedId()
             local vehicle = GetVehiclePedIsIn(ped, false)
@@ -273,8 +362,14 @@ CreateThread(function()
                     memo.bodyHealth  = GetVehicleBodyHealth(vehicle)
                     memo.hits        = 0
                     memo.onFire      = false
+                    memo.dead        = false
                     memo.coughs      = 0
                     ClearEntityLastDamageEntity(vehicle)
+
+                    -- A witnessed event, and the one the plan calls out by
+                    -- name (§4.3, open question 4): changing cars in front of
+                    -- people is how the police find out you changed cars.
+                    NickWitness('swap')
                 end
 
                 local body   = GetVehicleBodyHealth(vehicle)
@@ -286,6 +381,10 @@ CreateThread(function()
                     memo.hits = memo.hits + 1
                     ClearEntityLastDamageEntity(vehicle)
                 end
+
+                -- His own driving counts as damage AND as an incident: put it
+                -- into a bus stop in front of people and somebody phones it in.
+                if drop >= Config.witness.CRASH_DAMAGE then NickWitness('crash') end
 
                 memo.bodyHealth = body
 
@@ -308,9 +407,22 @@ CreateThread(function()
                     SetVehicleEngineOn(vehicle, true, true, false)
                 end
 
-                -- Enough punishment while she is already dying and she goes up.
-                if not memo.onFire
-                    and engine <= Config.damage.DAMAGE_STUTTER_THRESHOLD
+                -- The rung the ladder was missing: she STOPS. At the bottom of
+                -- the engine she cuts out for good and he is on foot whether
+                -- he likes it or not - which is what makes the pull-out and
+                -- the foot chase reachable without anyone having to set fire
+                -- to anything.
+                if not memo.dead and engine <= Config.damage.DEAD_ENGINE_THRESHOLD then
+                    memo.dead = true
+                    memo.hits = 0 -- the fire count starts from the moment she died
+
+                    SetVehicleUndriveable(vehicle, true)
+                    SetVehicleEngineHealth(vehicle, 0.0)
+                    NickHUD.shard('SHE\'S DEAD', 'That is as far as she goes. Run.')
+                end
+
+                -- Enough punishment while she is already dead and she goes up.
+                if not memo.onFire and memo.dead
                     and memo.hits >= Config.damage.DAMAGE_HITS_TO_FIRE then
                     memo.onFire = true
 
@@ -339,13 +451,27 @@ CreateThread(function()
         local role, status = NickState()
 
         if role == 'robber' and status.phase and status.phase ~= 'idle' then
-            RemoveAllPedWeapons(PlayerPedId(), true)
+            local ped = PlayerPedId()
+            RemoveAllPedWeapons(ped, true)
 
             -- The foot chase should end in a tackle, not in him wheezing to a
             -- halt at the end of an alley.
             if Config.pressure.ROBBER_INFINITE_STAMINA then
                 RestorePlayerStamina(PlayerId(), 1.0)
             end
+
+            -- (bullet, fire, EXPLOSION, collision, melee, steam, p7, drown).
+            -- The fireball has to throw him across the pavement without
+            -- killing him: it is the safety requirement and the joke in the
+            -- same native. The push is physics, so he still goes flying.
+            if Config.damage.ROBBER_EXPLOSION_PROOF then
+                SetEntityProofs(ped, false, false, true, false, false, false, false, false)
+            end
+
+            -- Guns become tyre tools by construction (plan §5.2): nobody ends
+            -- a pursuit by shooting the driver through the rear windscreen.
+            -- Re-asserted rather than set once - it resets with the ped.
+            SetPedCanBeShotInVehicle(ped, Config.damage.ROBBER_SHOT_IN_VEHICLE and true or false)
         end
     end
 end)
@@ -411,6 +537,17 @@ CreateThread(function()
             Wait(500)
         end
     end
+end)
+
+-- They called the favour in. He is told, loudly, because a helicopter is the
+-- least subtle object in Los Santos and pretending otherwise would be worse
+-- than telling him - and because twenty seconds of knowing you are lit up is
+-- the best twenty seconds in the round.
+RegisterNetEvent('nick:heliOverhead', function()
+    local role, status = NickState()
+    if role ~= 'robber' or status.phase ~= 'active' then return end
+
+    NickHUD.shard('THAT IS A HELICOPTER', 'They can see you. All of them. Get under something.')
 end)
 
 RegisterNetEvent('nick:end', function()

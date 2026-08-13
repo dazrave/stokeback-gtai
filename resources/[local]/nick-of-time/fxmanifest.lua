@@ -13,9 +13,11 @@ shared_scripts {
 
 client_scripts {
     '@core/client/lib.lua', -- FIRST: the SBM toolkit everything else uses
-    'client/main.lua',
+    'client/main.lua',      -- state, roles, spawns, HUD (defines NickState & co)
     'client/police.lua',
     'client/robber.lua',
+    'client/patrol.lua',    -- the AI, spawned on the robber's machine
+    'client/gps.lua',       -- the one owner of the route line
 }
 
 -- Order matters only in that round.lua calls into the other three at runtime;
@@ -25,7 +27,9 @@ server_scripts {
     'server/session.lua',
     'server/detection.lua',
     'server/heist.lua',
-    'server/round.lua',
+    'server/escalation.lua',
+    'server/round.lua',  -- owns the phase and the clock; publishes NickRound
+    'server/orders.lua', -- everything the clients ask for, refereed
 }
 
 dependency 'core'
