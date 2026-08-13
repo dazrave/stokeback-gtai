@@ -82,15 +82,16 @@ RegisterNetEvent('nick:cashCar', function()
     end
 end)
 
--- "Call it a day": stood inside a safehouse, he can stop the round himself and
--- keep what he has banked. The nerve of leaving £4,000 in the bag to do it is
--- the joke. Checked here as well as on his screen, or a robber about to be
--- cuffed could end the round from the driver's seat and rob the law of the
--- arrest.
+-- "Call it a day": stood inside a safehouse, he can stop the round himself.
+-- The bag banks on the way out - he is physically AT the door, so ending the
+-- round there and voiding the bag was a trap with a prompt (Rory walked with
+-- £0 over a £6,428 bag on the default map's first night). Checked here as
+-- well as on his screen, or a robber about to be cuffed could end the round
+-- from the driver's seat and rob the law of the arrest.
 RegisterNetEvent('nick:callItADay', function()
     local src = source
     if NickRound.phase() ~= 'active' or src ~= NickRound.robber() then return end
-    if not NickHeist.nearHouse(NickRound.pos()) then return end
+    if not NickHeist.callIt(NickRound.pos()) then return end
 
     exports.core:EndGametype('called-it')
 end)

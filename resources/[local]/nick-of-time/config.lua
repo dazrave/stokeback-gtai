@@ -218,6 +218,12 @@ Config = {
         -- to see - the whole force can drive through him and never know.
         ZONE_RADIUS    = 6.0,
         HIDDEN_BUCKET  = 71, -- arbitrary, just not 0 (the world everyone else is in)
+
+        -- (+) Ending the round is a held G, not a tapped one. G is also the
+        -- smash-and-grab key, and one loose tap at a door cost Rory a £6,428
+        -- bag on the default map's first night. Long enough to be deliberate,
+        -- short enough that a man who means it is not stood there feeling silly.
+        CALLIT_HOLD_MS = 1500,
     },
 
     -- ===== escalation =====

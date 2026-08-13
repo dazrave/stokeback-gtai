@@ -47,11 +47,15 @@ function GametypeResources()
 end
 
 -- Reply to a command, whether it came from a player or the server console.
+-- Always printed as well as said: a refusal only the player can see leaves no
+-- trace in the server log, and "did /nick start do anything?" spent a game
+-- night as a matter of testimony because every refusal on the way back from
+-- a round was chat-only.
 local function reply(source, msg)
+    print('[core] ' .. msg)
+
     if source and source > 0 then
         TriggerClientEvent('chat:addMessage', source, { color = { 245, 200, 66 }, args = { 'core', msg } })
-    else
-        print('[core] ' .. msg)
     end
 end
 

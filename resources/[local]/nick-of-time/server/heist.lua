@@ -383,6 +383,24 @@ function NickHeist.cashCar(vehicle, pos)
     return true, car.value
 end
 
+-- "Call it a day", the transaction half. He is stood AT one of tonight's
+-- doors, so the bag goes through it with him before the round ends - calling
+-- it from inside a safehouse and walking out with £0 while £6,428 sat in the
+-- bag (Rory, night one of the default map) was a trap, not a decision. Only
+-- the bag: a loot car is cashed from the driver's seat or not at all. The
+-- reveal and the stash ping are skipped because the round is over before
+-- anyone could act on them. Returns false away from tonight's doors, so the
+-- caller can refuse the end outright.
+function NickHeist.callIt(pos)
+    if not NickHeist.nearHouse(pos) then return false end
+
+    if state.carried > 0 then
+        setState({ carried = 0, stashed = state.stashed + state.carried })
+    end
+
+    return true
+end
+
 -- Is this position inside (with slack) one of this round's safehouse zones?
 -- The server grants the dive and "call it a day" off this, so a client
 -- cannot decide to be invisible - or to end the round - on the open road.

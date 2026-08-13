@@ -14,6 +14,7 @@ local memo = {
     hidden      = false,
     asked       = false, -- a vanish request is in flight; wait for the verdict
     inHouse     = 0,   -- game time we entered a safehouse zone
+    callHold    = 0,   -- game time G went down at a safehouse door
     pressure    = 0,
     pressureAt  = 0,
     blips       = {},
@@ -121,6 +122,7 @@ CreateThread(function()
             local onFoot = not IsPedInAnyVehicle(ped, false)
 
             local site  = onFoot and nearest(map.sites, Config.looting.ZONE_RADIUS) or nil
+            local holdingCallIt = false
             -- The safehouse zone works from behind the wheel too, but only for
             -- one thing: driving a nicked exotic through the door is the whole
             -- of cars-as-loot. Stashing, diving and calling it a day all still
@@ -157,16 +159,39 @@ CreateThread(function()
 
             elseif house then
                 local carried = purse.carried or 0
+                local walks   = carried + (purse.stashed or 0)
 
-                help(('~INPUT_PICKUP~ Stash %s  ~n~~INPUT_DETONATE~ Call it a day ~w~(ends the round, keeps %s)')
-                    :format(NickHUD.money(carried), NickHUD.money(purse.stashed or 0)))
+                -- Ending the round is a HOLD, never a tap. G is also the
+                -- smash-and-grab key - a key a robber has been spamming at
+                -- shop windows all round must not end his evening on one
+                -- loose press (Rory, night one of the default map: one G at
+                -- a door, round over, £6,428 still in the bag). The bag
+                -- banks on the way out (the server's side of the same fix),
+                -- so the prompt can promise the whole total.
+                if IsControlPressed(0, Config.controls.SECONDARY) then
+                    holdingCallIt = true
+                    if memo.callHold == 0 then memo.callHold = GetGameTimer() end
 
-                if IsControlJustReleased(0, Config.controls.PRIMARY) then
-                    TriggerServerEvent('nick:stash', house)
-                elseif IsControlJustReleased(0, Config.controls.SECONDARY) then
-                    TriggerServerEvent('nick:callItADay')
+                    if GetGameTimer() - memo.callHold >= Config.safehouses.CALLIT_HOLD_MS then
+                        memo.callHold = 0
+                        TriggerServerEvent('nick:callItADay')
+                    else
+                        help(('~INPUT_DETONATE~ Keep holding to call it a day ~w~- walks with %s')
+                            :format(NickHUD.money(walks)))
+                    end
+                else
+                    help(('~INPUT_PICKUP~ Stash %s  ~n~~INPUT_DETONATE~ Hold: call it a day ~w~(ends the round, banks the bag, walks with %s)')
+                        :format(NickHUD.money(carried), NickHUD.money(walks)))
+
+                    if IsControlJustReleased(0, Config.controls.PRIMARY) then
+                        TriggerServerEvent('nick:stash', house)
+                    end
                 end
             end
+
+            -- The hold survives only unbroken pressure at the door: step out
+            -- of the zone, get in a car, or let go and the clock starts over.
+            if not holdingCallIt then memo.callHold = 0 end
         end
     end
 end)
