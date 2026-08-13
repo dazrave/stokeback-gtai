@@ -8,7 +8,9 @@ the change the words literally describe.
 Issues are labelled on three axes: a **type** (`new-mode`, `enhance`, `feature`,
 `balance`, `bug`, `chore`), a **mode** (`mode:infected`, `mode:pint`,
 `mode:chase`, `mode:squadmate`, `mode:meta`), and a **handling** label. Only pick
-up `auto`; leave `needs-human` and `unclear` for a person.
+up `auto`; leave `needs-human` and `unclear` for a person. `scoped` on a
+`new-mode` issue means a human already did the design — the spec lives in
+`docs/modes/`, and its decomposed child issues labelled `auto` are fair game.
 
 ## What this is
 
@@ -83,6 +85,22 @@ you find yourself writing any of them inside a mode, stop and use core's:
 | what a player spawns holding | `ApplyLoadout(name)`, kits in `core/shared/loadouts.lua` |
 | respawn after death (delay/kit/messages) | `TriggerEvent('core:respawnPolicy', {...})` — see `core/client/respawn.lua` |
 | stop other modes / restore the world | `exports.core:claimWorld(name)` / `exports.core:releaseWorld()` |
+| a whole round's lifecycle (world, teams, clock, police, FF, respawn, timer, the `/name` command) | `exports.core:RegisterGametype(name, descriptor)` — `core/server/gametype.lua` has the descriptor shape; chase is the reference port |
+| end the round from a win condition | `exports.core:EndGametype(reason)` — lands in your `OnEnd(reason)` |
+| teams | descriptor `teams = 'ffa' \| 'coop' \| {{id,label,colour,loadout,assign},...}`; `exports.core:SetTeam(src,id)` / `GetTeam(src)` / `GetTeamMembers(id)` / `GetTeams()`; clients hear `core:teamChanged` |
+| round clock & weather | descriptor `clock = {hour, minute, weather, freeze}` (or the `core:clock` client event) |
+| is the player inside a zone | `SBM.inRadius(coords, radius)` |
+| named places for a mode | convention: `Config.locations = { name = {x,y,z,h,role='player-spawn'} }` |
+
+A registered gametype declares `population` (`'empty'|'sparse'|'alive'`),
+`police` (`'ambient'|'off'|'custom'` — off/custom mute NPC heat; custom means
+the mode spawns its own), `friendlyFire` (`'auto'` = cross-team only, or
+true/false), `respawn`, `clock`, `roundSeconds`, `minPlayers` and `hooks`
+(`OnStart/OnEnd/OnTick/OnPlayerJoin/OnPlayerLeave`, all pcall'd, OnTick ~1Hz).
+The framework owns `/name start|stop` — a ported mode must not register its
+own duplicate — and restores everything however the round ends, including the
+mode's resource stopping. `OnEnd` may return `'hold'` to keep the world claim
+through a planned restart; the mode then owns releasing it.
 
 Wiring a mode in: `client_script '@core/client/lib.lua'` first in
 client_scripts, `shared_script '@core/shared/loadouts.lua'` if it names a kit,
@@ -127,6 +145,16 @@ mid-holdout, which would wipe the horde or the run.
   the AI standing still doing nothing.
 - **Scripts can't run `ensure`/`start` console commands** (permission denied) —
   use `StartResource`/`StopResource` natives.
+- **A client handler only hears server events if it used `RegisterNetEvent`.**
+  `AddEventHandler` alone receives local `TriggerEvent`s and silently nothing
+  from `TriggerClientEvent` — the event just never arrives, no error.
+- **A resource cannot call its own exports.** Inside one resource, share via
+  the common script environment (a global table) instead — see `WorldClaim` /
+  `Population` in core's server files.
+- **`restart` never re-reads a changed `fxmanifest.lua`** — the server keeps
+  the script list it scanned at boot, so files added to a manifest silently
+  don't load: no error, exports missing. Run `refresh` first (deploy.sh now
+  does this for you).
 
 When you hit a new one, add it here. This list is the most valuable file in the
 repo.

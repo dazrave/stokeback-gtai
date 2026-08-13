@@ -23,7 +23,13 @@
 local policy = { kind = 'off' }
 local owner  = nil
 
-AddEventHandler('core:respawnPolicy', function(next)
+-- RegisterNetEvent, not AddEventHandler: the gametype framework sends
+-- policies from the SERVER (a descriptor's respawn block), and a handler
+-- that isn't net-registered silently never hears a server event. A mode's
+-- local TriggerEvent lands exactly as before. Server-sent policies have no
+-- invoking resource, so no owner - the framework switches them off itself at
+-- the end of the round.
+RegisterNetEvent('core:respawnPolicy', function(next)
     if type(next) ~= 'table' or not next.kind then return end
     policy = next
     owner  = GetInvokingResource()

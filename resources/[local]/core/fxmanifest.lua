@@ -11,6 +11,8 @@ shared_script 'shared/loadouts.lua'
 client_scripts {
     'client/lib.lua',
     'client/world.lua',
+    'client/clock.lua',
+    'client/teams.lua',
     'client/hud.lua',
     'client/life.lua',
     'client/respawn.lua',
@@ -23,6 +25,8 @@ client_scripts {
 server_scripts {
     'server/world.lua',
     'server/modes.lua',
+    'server/teams.lua',
+    'server/gametype.lua',
     'server/stats.lua',
     'server/rules.lua',
     'server/director.lua',

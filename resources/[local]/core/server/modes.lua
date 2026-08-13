@@ -10,8 +10,31 @@
 -- permission to run stop/ensure in the console and those calls were being
 -- silently denied.
 
--- Everything that must be OFF for a mode to own the world outright.
-local ALL_MODES = { 'infected_dev', 'pint', 'infected', 'squadmate', 'chase' }
+-- Everything that must be OFF for a mode to own the world outright: this
+-- hardcoded legacy list, UNION whatever has registered with the gametype
+-- framework (server/gametype.lua). A registered mode never needs to edit
+-- this file - it lands on the stop-list by declaring itself.
+local LEGACY_MODES = { 'infected_dev', 'pint', 'infected', 'squadmate', 'chase' }
+
+local function allModes()
+    local list, seen = {}, {}
+
+    for _, name in ipairs(LEGACY_MODES) do
+        seen[name] = true
+        list[#list + 1] = name
+    end
+
+    -- GametypeResources lives in server/gametype.lua, which loads after this
+    -- file - looked up at claim time, never at load time, so order is safe.
+    for _, name in ipairs(GametypeResources and GametypeResources() or {}) do
+        if not seen[name] then
+            seen[name] = true
+            list[#list + 1] = name
+        end
+    end
+
+    return list
+end
 
 -- The default evening: what free roam runs when nobody has claimed the world.
 -- Squadmates are deliberately absent (#18) - restoring the stack must not
@@ -22,21 +45,21 @@ local claimedBy = nil
 
 -- A mode calls this before it starts: everything else stops, the claimant is
 -- left alone. Never yields, so it is safe as an export.
-exports('claimWorld', function(mode)
+local function claimWorld(mode)
     claimedBy = mode
 
-    for _, name in ipairs(ALL_MODES) do
+    for _, name in ipairs(allModes()) do
         if name ~= mode and GetResourceState(name) == 'started' then
             StopResource(name)
         end
     end
 
     print(('[core] world claimed by %s'):format(mode or '?'))
-end)
+end
 
 -- And this when it ends. The restart runs in its own thread because the stack
 -- needs a beat between resources and exports cannot yield.
-exports('releaseWorld', function()
+local function releaseWorld()
     claimedBy = nil
 
     CreateThread(function()
@@ -49,7 +72,14 @@ exports('releaseWorld', function()
 
         print('[core] world handed back to the default stack')
     end)
-end)
+end
+
+exports('claimWorld', claimWorld)
+exports('releaseWorld', releaseWorld)
+
+-- server/gametype.lua claims on a mode's behalf. Shared as a global because
+-- both files run in core, and a resource cannot call its own exports.
+WorldClaim = { claim = claimWorld, release = releaseWorld }
 
 exports('worldClaimedBy', function()
     return claimedBy

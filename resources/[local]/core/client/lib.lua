@@ -126,6 +126,18 @@ function SBM.behindFade(fn, outMs, inMs)
     DoScreenFadeIn(inMs or 800)
 end
 
+-- ===== zones =====
+-- Is the player inside this circle? The bread and butter of Config.locations
+-- zones - capture points, extraction circles, "get to the boat". Plain maths
+-- rather than vector subtraction so it takes a vector3 OR a bare {x,y,z}
+-- table straight out of a config.
+function SBM.inRadius(coords, r)
+    local at = GetEntityCoords(PlayerPedId())
+    local dx, dy, dz = at.x - coords.x, at.y - coords.y, at.z - coords.z
+
+    return (dx * dx + dy * dy + dz * dz) <= (r * r)
+end
+
 -- ===== entity bookkeeping =====
 -- Every mode that spawns things needs the same two verbs: remember what I
 -- made, and make it all go away. Each tracker is its own ledger, so a mode

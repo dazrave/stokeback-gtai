@@ -139,6 +139,13 @@ resources/[local]/
 Each resource is config-first: `config.lua` holds every tunable, and the
 behaviour files avoid hardcoding numbers.
 
+New modes don't hand-roll the plumbing either: a mode registers a **gametype
+descriptor** with core (`exports.core:RegisterGametype`) declaring its teams,
+population, police, clock, friendly-fire and respawn rules — and core runs the
+lifecycle for it: the `/mode start|stop` command, dealing the teams, the round
+timer, and putting the whole world back afterwards, however the round ends.
+`chase` is the reference port.
+
 ## Running it
 
 Requires a [FiveM server](https://docs.fivem.net/docs/server-manual/setting-up-a-server/)

@@ -46,7 +46,7 @@ local function claimant()
     return GetInvokingResource() or GetCurrentResourceName()
 end
 
-exports('setPopulation', function(policy)
+local function setPopulation(policy)
     if not RANK[policy] then
         print(('[core] ignoring population claim from %s: unknown policy %q (want empty, sparse or alive)')
             :format(claimant(), tostring(policy)))
@@ -57,14 +57,21 @@ exports('setPopulation', function(policy)
     refresh()
 
     return current
-end)
+end
 
-exports('clearPopulation', function()
+local function clearPopulation()
     claims[claimant()] = nil
     refresh()
 
     return current
-end)
+end
+
+exports('setPopulation', setPopulation)
+exports('clearPopulation', clearPopulation)
+
+-- server/gametype.lua claims on a running mode's behalf. Shared as a global
+-- because both files run in core, and a resource cannot call its own exports.
+Population = { set = setPopulation, clear = clearPopulation }
 
 exports('getPopulation', function()
     return current
