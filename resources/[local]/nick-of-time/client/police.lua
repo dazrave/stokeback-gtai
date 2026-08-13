@@ -524,21 +524,45 @@ end)
 -- ===== rubber banding =====
 -- Help closing a GAP, never help winning a drag race. Distance is measured to
 -- what DISPATCH says - the guess, not the truth - so the boost can never be
--- felt out like a radar, and while the trail is cold there is no boost at all.
+-- felt out like a radar. The gate is status.track, which exists for a hard
+-- lock AND for the drifting search circle: a warm circle is still a chase.
+-- Only fully cold starves the band, by design.
 --
 -- Only the acceleration half of BAND_POWER_WEIGHT is wired up. The top-speed
 -- natives disagree about their own units badly enough to hand a cruiser 200mph
 -- by accident, and "no cop car catches him on straights alone" is an
 -- acceptance criterion - so the safe half is the half we want anyway.
+--
+-- THE PER-FRAME TRAP (the SetBlipRoute lesson, in vehicle form): the power
+-- native is a per-frame EFFECT - set once, it lasts one frame and does
+-- nothing a driver can feel. The first cut applied it only when the value
+-- CHANGED, on a 700ms clock, so the band never worked at all ("robber was
+-- absolutely running away on the straights"). The sums stay on the slow
+-- clock here; the APPLICATION is the per-frame thread underneath.
+local bandPower = { vehicle = 0, value = 0.0 }
+
 CreateThread(function()
-    local applied = { vehicle = 0, value = -1.0 }
+    local capped = 0 -- the vehicle currently wearing the close-range cap
+
+    -- Engagement is reported to the server on state CHANGES only, throttled,
+    -- so "was the rubber band working?" is answerable from the log instead of
+    -- from vibes at the bar afterwards.
+    local engaged, logAt = false, 0
+
+    local function report(nowEngaged, value)
+        if nowEngaged == engaged then return end
+        if nowEngaged and GetGameTimer() < logAt then return end -- engages throttled; drops always land
+        engaged, logAt = nowEngaged, GetGameTimer() + 3000
+        TriggerServerEvent('nick:bandState', nowEngaged, value)
+    end
 
     local function handBack()
-        if applied.vehicle ~= 0 and DoesEntityExist(applied.vehicle) then
-            SetVehicleEnginePowerMultiplier(applied.vehicle, 0.0)
-            SetVehicleMaxSpeed(applied.vehicle, 0.0) -- 0 = its own engine back
+        bandPower = { vehicle = 0, value = 0.0 } -- per-frame: stopping is the reset
+
+        if capped ~= 0 and DoesEntityExist(capped) then
+            SetVehicleMaxSpeed(capped, 0.0) -- 0 = its own engine back
         end
-        applied = { vehicle = 0, value = -1.0 }
+        capped = 0
     end
 
     while true do
@@ -560,10 +584,8 @@ CreateThread(function()
                 1.0 + (band.BAND_MAX_MULTIPLIER - 1.0) * howFar)
             local value = (mult - 1.0) * 100.0 * band.BAND_POWER_WEIGHT
 
-            if vehicle ~= applied.vehicle or math.abs(value - applied.value) > 1.0 then
-                SetVehicleEnginePowerMultiplier(vehicle, value)
-                applied = { vehicle = vehicle, value = value }
-            end
+            bandPower = { vehicle = vehicle, value = value }
+            report(value > 0.5, value)
 
             -- INSIDE the band start, the help stops and a CAP begins (plan
             -- §5.1): close up, a police car may not go faster than the car it
@@ -585,14 +607,34 @@ CreateThread(function()
 
                 if mineTop > 0.0 and theirTop > 0.0 then
                     SetVehicleMaxSpeed(vehicle, math.max(theirTop, mineTop * band.POLICE_SPEED_FLOOR_PCT))
+                    capped = vehicle
                 end
-            else
-                SetVehicleMaxSpeed(vehicle, 0.0)
+            elseif capped ~= 0 then
+                if DoesEntityExist(capped) then SetVehicleMaxSpeed(capped, 0.0) end
+                capped = 0
             end
-        elseif applied.vehicle ~= 0 then
+        elseif bandPower.vehicle ~= 0 or capped ~= 0 then
             -- Hand the engine back, or the boost and the cap both follow the
             -- car into free roam.
             handBack()
+            report(false, 0.0)
+        end
+    end
+end)
+
+-- The application half: per frame, or it is not an effect at all. Nothing is
+-- computed here - the slow thread above decides, this one merely keeps saying
+-- it. Letting go IS the reset, which is the one kindness of a per-frame
+-- native: it cannot leak into free roam.
+CreateThread(function()
+    while true do
+        Wait(0)
+
+        if bandPower.vehicle ~= 0 and bandPower.value > 0.0
+            and DoesEntityExist(bandPower.vehicle) then
+            SetVehicleEnginePowerMultiplier(bandPower.vehicle, bandPower.value)
+        else
+            Wait(250)
         end
     end
 end)

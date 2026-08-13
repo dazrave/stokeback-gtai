@@ -78,7 +78,13 @@ Config = {
     -- closing a GAP, never help winning a drag race.
     banding = {
         BAND_START_DISTANCE      = 250,   -- boost begins beyond this
-        BAND_MAX_MULTIPLIER      = 1.25,
+
+        -- 1.25 -> 1.35 once the band actually applied (it had never worked -
+        -- see police.lua's per-frame note): a cruiser at full stretch should
+        -- roughly HOLD a straight against the robber pool, uphill included,
+        -- and still only ever CLOSE through a corner or a cutoff - the
+        -- close-range cap below BAND_START_DISTANCE is what keeps that true.
+        BAND_MAX_MULTIPLIER      = 1.35,
         BAND_POWER_WEIGHT        = 0.7,   -- bias toward acceleration over top speed
         POLICE_SPEED_FLOOR_PCT   = 0.80,  -- stops a robber griefing in a slow vehicle
         AI_PATROLS_RUBBER_BANDED = false, -- (wishlist) night one has no AI patrols

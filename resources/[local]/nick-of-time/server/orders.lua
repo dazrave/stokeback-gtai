@@ -164,6 +164,20 @@ RegisterNetEvent('nick:witness', function(kind)
     NickEscalation.witness(NickRound.pos(), saw)
 end)
 
+-- Banding engagement, logged at state changes so "was the rubber band
+-- working?" is answerable from the log instead of from vibes at the bar.
+-- Print-only - no game state is touched - so the worst a modded client can
+-- do here is fib to the logbook.
+RegisterNetEvent('nick:bandState', function(engaged, value)
+    local src = source
+    if NickRound.phase() == 'idle' or src == NickRound.robber() then return end
+
+    print(('[nick] banding %s for %s (power +%.0f%%)'):format(
+        engaged and 'ENGAGED' or 'dropped',
+        GetPlayerName(src) or ('id ' .. tostring(src)),
+        tonumber(value) or 0))
+end)
+
 -- Any copper can ask for the air unit; the ration book lives in escalation.
 -- The pad goes back to the REQUESTER only - his client walks the spawn in
 -- when he gets near it - and the approval is announced to the room by the
