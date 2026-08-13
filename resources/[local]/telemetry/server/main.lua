@@ -208,6 +208,19 @@ local function findModeEntry(id)
     return nil
 end
 
+-- ===== free-roam flag =====
+-- Clients get told when the server is in free roam (no mode running) so
+-- free-roam-only perks can gate on it. Broadcast unconditionally on a slow
+-- tick rather than on change: it also serves as the join-time sync, and at
+-- this size there is nothing to save by being clever.
+CreateThread(function()
+    while true do
+        local entry = findModeEntry('freeroam')
+        TriggerClientEvent('telemetry:freeroam', -1, entry and entry.running or false)
+        Wait(3000)
+    end
+end)
+
 -- ===== who is who =====
 -- The workshop pushes the list of people currently in the voice server. That
 -- list IS the crew: nobody maintains a roster file, whoever turned up tonight

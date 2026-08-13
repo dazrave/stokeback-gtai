@@ -105,6 +105,22 @@ RegisterNetEvent('infected:engaged', function(on) engaged = on and true or false
 RegisterNetEvent('chase:role', function() inChase = true end)
 RegisterNetEvent('chase:end', function() inChase = false end)
 
+-- ===== free-roam perks =====
+-- Unlimited ammo while nothing is being scored. The server's flag covers
+-- every registered gametype plus pint; engaged/inChase are kept in the gate
+-- anyway because they arrive instantly while the flag ticks at 3s - a horde
+-- must never start against a player still on bottomless clips. Reapplied
+-- every tick so a respawned ped inherits the current state.
+local freeroam = false
+RegisterNetEvent('telemetry:freeroam', function(on) freeroam = on and true or false end)
+
+CreateThread(function()
+    while true do
+        SetPedInfiniteAmmoClip(PlayerPedId(), freeroam and not engaged and not inChase)
+        Wait(1000)
+    end
+end)
+
 -- How often your position leaves this machine. The map is only ever as fresh
 -- as the slowest link in send -> relay -> redraw, and at 4s each that was up
 -- to ten seconds of lag: a mate's dot sat a street behind where they actually
