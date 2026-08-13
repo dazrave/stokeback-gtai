@@ -499,41 +499,95 @@ Config = {
     },
 
     -- ===== the map =====
-    -- NOTHING IS TAGGED YET. Every one of these lists is empty on purpose:
-    -- guessing a coordinate puts a car inside a building and a player in the
-    -- sky, and this repo's hard rule is that map coordinates come from a
-    -- person standing on the spot. They arrive from the tag board
-    -- (https://sbm.dazrave.uk/tag) and land here as data.
+    -- MADE-UP DEFAULTS, by owner's order. Nothing below has been tagged: on
+    -- game night 2026-08-13, with a full server and an empty tag board,
+    -- Darren overrode the never-guess rule for this block alone - quote, "if
+    -- we don't have spawn points etc, make them up!" - so the mode could deal
+    -- a round at all. Every entry is either a coordinate this repo has
+    -- already verified somewhere else (marked chase/pint) or a canonical,
+    -- widely documented spot, so expect the odd door that turns out to be a
+    -- hedge. The rule itself still stands everywhere else in this repo.
     --
-    -- Until then /nick start refuses with a list of what is still missing -
-    -- the mode builds, deploys and sits there perfectly happily, it just
-    -- cannot deal a round.
+    -- Real tags from the tag board (https://sbm.dazrave.uk/tag) land here as
+    -- data and replace these entries one for one; when the last default goes,
+    -- DEFAULT_MAP and the round-start disclaimer go with it.
     --
-    -- The shape, once tagged (copy the commented line, fill in the numbers):
+    -- The shape (copy a line, fill in the numbers):
     locations = {
+        -- Flips the one-line disclaimer at round start. Delete alongside the
+        -- last made-up entry.
+        DEFAULT_MAP = true,
+
         -- Where the robber starts, with a car. Spread so no spawn is next to
         -- more than two loot sites.
         --   { name = 'Legion car park', x = 0.0, y = 0.0, z = 0.0, h = 0.0 },
-        robberSpawns = {},
+        --
+        -- All three are well over a kilometre from every muster point, so
+        -- whichever pair the session seed deals, the opening minute is his.
+        robberSpawns = {
+            { name = 'Vinewood Plaza',      x = 638.0,   y = 1.0,     z = 82.8,  h = 250.0 }, -- chase's Vinewood station kerb
+            { name = 'Galileo Observatory', x = -436.0,  y = 1059.4,  z = 327.7, h = 130.0 }, -- pint, mission 1
+            { name = 'LSIA apron',          x = -1336.0, y = -3044.0, z = 13.9,  h = 330.0 }, -- pint, mission 2 start
+        },
 
         -- One muster point per round for the whole force. Spread so the
         -- opening 60 seconds isn't decided by geography.
         --   { name = 'Mission Row', x = 0.0, y = 0.0, z = 0.0, h = 0.0 },
-        copSpawns = {},
+        --
+        -- Chase's city stations, verbatim - the same kerbs its fleet code has
+        -- laid cars along all season.
+        copSpawns = {
+            { name = 'Mission Row',     x = 425.1,   y = -979.5,  z = 30.7, h = 90.0 },  -- chase
+            { name = 'Vespucci station', x = -1108.0, y = -845.0,  z = 19.3, h = 40.0 },  -- chase
+            { name = 'Davis sheriff station', x = 359.0, y = -1584.0, z = 29.3, h = 320.0 }, -- chase
+        },
 
         -- Tier 1: convenience stores with glass frontage, so he can watch the
         -- street while the bag fills. Shell interiors only, no IPL loading.
         -- `tier` keys into Config.looting.tiers; `stock` overrides that tier's
         -- value for a site that is worth more or less than its neighbours.
         --   { name = 'Strawberry shop', tier = 'cornerShop', x = 0.0, y = 0.0, z = 0.0, h = 0.0 },
-        lootSites = {},
+        --
+        -- The first eight are the canonical robbable counters of central LS -
+        -- half the FiveM robbery scripts ever written stand players on these
+        -- exact tiles. The last four are coordinates this repo has already
+        -- stood on (pint's fuel stops and mission targets), wearing shop hats.
+        lootSites = {
+            { name = "24/7, Innocence Blvd (Strawberry)",         x = 25.7,    y = -1347.3, z = 29.5,  h = 0.0 },
+            { name = "24/7, Clinton Ave (Downtown Vinewood)",     x = 373.5,   y = 325.5,   z = 103.6, h = 0.0 },
+            { name = "LTD, Grove St (Davis)",                     x = -47.9,   y = -1757.8, z = 29.4,  h = 0.0 },
+            { name = "LTD, Mirror Park Blvd (Mirror Park)",       x = 1163.4,  y = -323.8,  z = 69.2,  h = 0.0 },
+            { name = "LTD, Ginger St (Little Seoul)",             x = -707.5,  y = -914.3,  z = 19.2,  h = 0.0 },
+            { name = "Rob's Liquor, El Rancho Blvd (Murrieta)",   x = 1135.8,  y = -982.3,  z = 46.4,  h = 0.0 },
+            { name = "Rob's Liquor, San Andreas Ave (Vespucci)",  x = -1222.9, y = -907.0,  z = 12.3,  h = 0.0 },
+            { name = "Rob's Liquor, Prosperity St (Morningwood)", x = -1487.6, y = -379.1,  z = 40.2,  h = 0.0 },
+            { name = "Petrol shop, Davis",                        x = 180.6,   y = -1562.0, z = 29.3,  h = 0.0 }, -- pint fuel stop
+            { name = "Petrol shop, La Puerta",                    x = -319.3,  y = -1471.7, z = 30.5,  h = 0.0 }, -- pint fuel stop
+            { name = "Pier kiosk, Del Perro",                     x = -1850.1, y = -1231.8, z = 13.0,  h = 0.0 }, -- pint, the pier
+            { name = "Hospital gift shop, Strawberry",            x = 341.3,   y = -1395.4, z = 32.5,  h = 0.0 }, -- pint, Central LS Medical
+        },
 
         -- Unmarked doorways and alleys. Each one needs a blind approach where
         -- a corner breaks line of sight within ~30m of the door - that last
         -- property is the whole dive mechanic and will not survive being
         -- picked off a map.
         --   { name = 'Alta alley door', x = 0.0, y = 0.0, z = 0.0, h = 0.0 },
-        safehouses = {},
+        --
+        -- Doorways the story mode already proved you can stand in, spread one
+        -- per district. The blind-approach property is EXACTLY what a made-up
+        -- default cannot promise - these are the entries to replace first.
+        safehouses = {
+            { name = "Lester's gaff (Murrieta)",                x = 1273.9,  y = -1719.3, z = 54.9,  h = 25.0 },
+            { name = "Auntie's porch (Forum Dr, Strawberry)",   x = -14.3,   y = -1441.5, z = 31.1,  h = 180.0 },
+            { name = "Floyd's stairs (Vespucci)",               x = -1150.7, y = -1520.9, z = 10.6,  h = 120.0 },
+            { name = "Alta St doorway (Downtown)",              x = -269.9,  y = -955.2,  z = 31.2,  h = 205.0 },
+            { name = "Eclipse Towers side door (West Vinewood)", x = -773.2, y = 312.5,   z = 85.7,  h = 175.0 },
+            { name = "Integrity Way lobby (Pillbox Hill)",      x = -47.5,   y = -590.0,  z = 37.9,  h = 250.0 },
+            { name = "Grove St front room (Davis)",             x = 86.7,    y = -1959.4, z = 21.1,  h = 320.0 },
+            { name = "Del Perro Heights (the nice flat)",       x = -1447.1, y = -538.3,  z = 34.7,  h = 35.0 },
+            { name = "Whispymound Dr drive (Vinewood Hills)",   x = 7.9,     y = 548.1,   z = 175.6, h = 10.0 },
+            { name = "The doorway opposite the nick (La Mesa)", x = 826.0,   y = -1290.0, z = 28.2,  h = 180.0 }, -- chase's La Mesa kerb
+        },
     },
 
     -- What the refusal message reads out, and what counts as enough. `min` is

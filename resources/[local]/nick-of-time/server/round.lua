@@ -148,6 +148,10 @@ end
 
 -- ===== the round, as the framework sees it =====
 
+-- Said once an evening, not once a round: the default-map disclaimer matters
+-- the first time and is wallpaper by the third.
+local defaultMapNoted = false
+
 -- OnStart. The framework has already claimed the world, muted NPC heat, set
 -- the dusk clock and dealt everyone onto 'police' by the time this runs.
 local function onStart()
@@ -162,6 +166,14 @@ local function onStart()
         tell(('Need %d in the server: one robber and someone to chase him.'):format(
             Config.round.MIN_PLAYERS))
         return exports.core:EndGametype('short-handed')
+    end
+
+    -- The map under everyone's wheels is the made-up default set (config.lua,
+    -- Darren's game-night order). Say so, so the first door that turns out to
+    -- be a hedge gets reported to the tag board rather than litigated in chat.
+    if Config.locations.DEFAULT_MAP and not defaultMapNoted then
+        defaultMapNoted = true
+        tell('Tonight\'s map is the made-up default set (Darren\'s orders). If a shop turns out to be a wall, tag the real one at https://sbm.dazrave.uk/tag.')
     end
 
     local robber = nextRobber(players)
