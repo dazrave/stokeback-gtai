@@ -45,6 +45,23 @@ function TriDry(x, y, z)
     return ((foundGround and ground) or z) > water
 end
 
+-- The last DRY grounded waypoint at or before `at`, walking backwards
+-- through the course, falling back to the start line. Recovery aims here
+-- rather than blindly at "the last waypoint": wherever a racer managed to
+-- drown themselves, neither they nor their replacement vehicle may ever be
+-- placed at a point the water test fails. With the course built from
+-- telemetry samples of humans on dry ground this should always answer at
+-- the first step - but "should" is what put the bikes in the sea.
+function TriDryWaypointBefore(course, at)
+    for index = math.min((at or 1) - 1, #course.waypoints), 1, -1 do
+        local w = course.waypoints[index]
+        if w.grounded and TriDry(w.coords.x, w.coords.y, w.coords.z) then
+            return w.coords
+        end
+    end
+    return course.start
+end
+
 TriHUD = {}
 TriHUD.notify = SBM.notify
 TriHUD.shard  = SBM.shard
@@ -226,7 +243,9 @@ function TriBackToCheckpoint()
     Wait(600)
 
     if not inAir then
-        local back = (last and last.coords) or state.course.start
+        -- Dry-checked, not assumed: the nearest earlier waypoint that
+        -- passes the water test, however they came to need it.
+        local back = TriDryWaypointBefore(state.course, at)
         if back then
             local ped = PlayerPedId()
             SetEntityCoords(ped, back.x, back.y, back.z, false, false, false, false)

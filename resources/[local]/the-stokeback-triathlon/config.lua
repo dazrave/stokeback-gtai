@@ -353,21 +353,25 @@ Config = {
     -- 793.4, h 93.5), the only real tag this mode has ever been given, and
     -- it deserves a course with room for it.
     --
-    -- The guessing was done with the safety catch on. Grounded legs (see
-    -- GROUNDED on the leg configs) snap to the terrain, so a z below is
-    -- advisory; most ground points reuse pint-verified Paleto coordinates
-    -- anyway. The air gates are invented outright, at 110-180m over the
-    -- flat coastal land around Paleto, where the 45m gate radius forgives
-    -- everything except an actual crash.
+    -- THE GUESSING IS OVER. Every ground coordinate below is a TELEMETRY
+    -- SAMPLE: a position a human provably occupied tonight, on foot or in a
+    -- vehicle, recorded every three seconds by the telemetry resource. The
+    -- night's data also settled an argument no config could: pint's own
+    -- "beach road west" and "dune road" coordinates are OPEN SEA - players
+    -- were sampled SWIMMING through them (z below the waterline) - which is
+    -- how three passes of careful config editing still put checkpoints and
+    -- bikes in the water. Paleto's dry, playable world, as actually walked
+    -- and driven tonight, is the town grid, the beach road bending north-
+    -- east, and the coast road running east - so that is where the course
+    -- lives. The air gates fly a corridor a pilot provably flew tonight at
+    -- z 99-205, and the plane line-up sits where a duster provably LANDED
+    -- and rolled to a stop.
     --
-    -- NOTHING ABOUT THIS COURSE MAY REQUIRE TOUCHING WATER. Darren has now
-    -- said so twice ("don't do the Tri in water. it's well hard"). Every
-    -- ground checkpoint sits on the beach ROAD, the dune line or a street -
-    -- never the surf - because the ground probe over water answers with the
-    -- SEABED and the ring drowns (the client clamps the snap to the water
-    -- surface as a backstop, but the course must not lean on it). If you
-    -- are placing a point and wondering whether the tide reaches it, you
-    -- are already too close to the sea.
+    -- NOTHING ABOUT THIS COURSE MAY REQUIRE TOUCHING WATER. Darren has said
+    -- so three times now. A new checkpoint gets placed on a telemetry
+    -- sample of a human on dry ground, or it does not get placed. The
+    -- water-surface clamp and the spawn guards stay armed as backstops,
+    -- but after this pass they should never fire.
     --
     -- The shape, once tagged (copy the commented line, fill in the numbers):
     --
@@ -388,88 +392,77 @@ Config = {
         default = {
             label = 'The Stokeback Original',
 
-            -- Outside the Paleto pub, facing the sea. The same spot pint's
-            -- water-landing regroup uses, so it is known open ground.
+            -- Proven: DazRave stood exactly here tonight (sample t
+            -- 1786660203, z 32.4). Facing up the street.
             start = { name = 'Start line - the Paleto pub', x = -292.0, y = 6256.0, z = 31.4, h = 0.0 },
 
             legs  = {
-                -- ~740m, call it a minute and three-quarters of wheezing: up
-                -- the street, over the town's west fields to the dune road,
-                -- along the beach road west, then the last stretch to the
-                -- bikes at the top of the beach. Over the minute target, but
-                -- every point is a pint-verified street or road spot at
-                -- z 15-32 and the bikes now sit on proven-dry ground - the
-                -- extra 150m of wheezing is the price of nobody swimming.
+                -- ~360m, about a minute on the nose: up the street, the road
+                -- north-east, and the beach road bend - the exact line the
+                -- crew ran and drove tonight. Provenance per point:
+                --   cp1 QuietOtter1376 on foot,  t 1786657093
+                --   cp2 QuietOtter1376 on foot,  t 1786657851
+                --   cp3 QuietOtter1376 driving,  t 1786656925
                 run  = {
                     checkpoints = {
-                        { name = 'run cp 1 - up the street',      x = -275.0, y = 6330.0, z = 32.0 },
-                        { name = 'run cp 2 - the dune road',      x = -450.0, y = 6560.0, z = 15.0 },
-                        { name = 'run cp 3 - beach road west',    x = -560.0, y = 6520.0, z = 20.0 },
+                        { name = 'run cp 1 - up the street',        x = -275.0, y = 6330.0, z = 32.4 },
+                        { name = 'run cp 2 - the road north-east',  x = -250.3, y = 6396.9, z = 31.1 },
+                        { name = 'run cp 3 - the beach road bend',  x = -153.6, y = 6500.7, z = 29.0 },
                     },
                 },
 
-                -- ~3.1km, about two minutes: west along the dune line above
-                -- the beach, out to the coast highway by the Chiliad
-                -- trailhead - the closest this leg now gets to the mountain
-                -- it used to cross - a big loop through the east fields,
-                -- then back along the dune road and west to the planes,
-                -- straight through the oncoming traffic of everyone still
-                -- between the bikes and cp 2.
-                --
-                -- Every checkpoint is on the dune road, the highway or the
-                -- fields - the sand below is scenery, and riding on it is a
-                -- choice rather than a requirement. The old beach-line
-                -- checkpoints at z 4-8 were where the ground probe could
-                -- answer with seabed; nothing here sits below z 15.
-                --
-                -- The transition anchor is a spot pint verifiably spawned a
-                -- CAR on, and its heading is chosen for the bay fan, not the
-                -- view: bays walk at (cos h, sin h) from the anchor, so
-                -- h=270 sends the line due SOUTH, directly away from the
-                -- sea, with the bikes facing east. The first line-up here
-                -- pointed its fan north and fed the bikes to the tide one
-                -- bay at a time - Darren watched it happen.
+                -- ~2.3km, a shade under two minutes at road pace: out to the
+                -- far bend, a lap of the town grid, then the long proven
+                -- straight of the coast road east to the planes - the same
+                -- tarmac QuietOtter1376 hit 45 m/s on tonight. No dune, no
+                -- sand, no surf: telemetry showed the "dune road" this
+                -- course used to trust is open sea, so the moto leg now
+                -- lives entirely on streets and roads humans drove tonight.
+                -- Provenance per point (all sampled IN A VEHICLE):
+                --   t   DazRave        t 1786656896 (bays fan SOUTH, h=270,
+                --                      onto the inland verge - sea is 100m+
+                --                      the other way)
+                --   cp1 QuietOtter1376 t 1786657788
+                --   cp2 DazRave        t 1786656980, 25 m/s
+                --   cp3 DazRave        t 1786658096
+                --   cp4 QuietOtter1376 t 1786657767, 24 m/s
+                --   cp5 QuietOtter1376 t 1786656063, 45 m/s
+                --   cp6 QuietOtter1376 t 1786656042, 34 m/s
                 moto = {
-                    transition = { name = 'The bikes - top of the beach', x = -800.0, y = 6420.0, z = 15.0, h = 270.0 },
+                    transition = { name = 'The bikes - the beach road', x = -103.7, y = 6551.5, z = 28.9, h = 270.0 },
                     checkpoints = {
-                        { name = 'moto cp 1 - the west dune',           x = -1150.0, y = 6300.0, z = 20.0 },
-                        { name = 'moto cp 2 - the trailhead',           x = -680.0,  y = 5990.0, z = 17.0 },
-                        { name = 'moto cp 3 - the east fields',         x = -90.0,   y = 6420.0, z = 31.5 },
-                        { name = 'moto cp 4 - the dune road again',     x = -450.0,  y = 6560.0, z = 15.0 },
-                        { name = 'moto cp 5 - beach road west, again',  x = -565.0,  y = 6516.0, z = 20.0 },
+                        { name = 'moto cp 1 - the far bend',        x = -48.3,  y = 6610.9, z = 29.8 },
+                        { name = 'moto cp 2 - town, northbound',    x = -267.7, y = 6393.9, z = 30.5 },
+                        { name = 'moto cp 3 - past the pub',        x = -303.8, y = 6232.7, z = 31.1 },
+                        { name = 'moto cp 4 - the beach road',      x = -133.2, y = 6447.2, z = 31.3 },
+                        { name = 'moto cp 5 - the coast road',      x = 890.2,  y = 6498.6, z = 22.6 },
+                        { name = 'moto cp 6 - the long straight',   x = 1135.0, y = 6496.5, z = 21.6 },
                     },
                 },
 
-                -- ~6.7km, about three minutes at race pace once the climb
-                -- and the two hairpins have taxed everybody: the planes sit
-                -- on the west beach pointing back east down a kilometre of
-                -- flat sand, which is the runway, and nobody is to think
-                -- about it too hard. The course NEVER leaves land (Darren:
-                -- "don't do the Tri in water. it's well hard" - featureless
-                -- sea gives a pilot no height or speed reference): east over
-                -- the town and the beach road, out along the north coast
-                -- strip with Procopio Point and the coast road underneath
-                -- for reference, a far turn short of Mount Gordo, the long
-                -- run back over the fields, the Paleto farmland, a swoop
-                -- down the coast highway, and a red gate low over the beach
-                -- where a bad landing costs sand, not sea.
+                -- ~5.5km, about three minutes once the three hairpins have
+                -- taxed everybody: an out-and-back-and-out shuttle over the
+                -- one stretch of sky a pilot PROVED tonight - a duster flew
+                -- this corridor at z 99-205 (the gates sit inside or above
+                -- that band), and the line-up is parked where that duster
+                -- LANDED on the coast road and rolled to a stop (DazRave,
+                -- t 1786656010). Planes face east down the proven tarmac,
+                -- bays fan south onto the inland verge; the nearest
+                -- swimming sample to the anchor is 1.5km away. The finish
+                -- is low over the beach road bend, where a bad landing
+                -- costs grass and dignity, not sea.
                 air  = {
-                    -- Fan check (the bikes' lesson): h=295 walks the plane
-                    -- bays at (cos 295, sin 295) = SSE, INLAND up the dry
-                    -- backshore, with the noses pointing ENE down the sand.
-                    -- The anchor is a pint-verified land spot at z 8, and
-                    -- the garage's per-bay water guard covers the rest.
-                    transition = { name = 'The planes - west end of the beach', x = -1350.0, y = 6370.0, z = 8.0, h = 295.0 },
+                    transition = { name = 'The planes - the coast road', x = 1301.8, y = 6492.6, z = 20.8, h = 270.0 },
                     checkpoints = {
-                        { name = 'air gate 1 - over the beach road',     x = -160.0,  y = 6560.0, z = 110.0 },
-                        { name = 'air gate 2 - Procopio Point',          x = 400.0,   y = 6850.0, z = 130.0 },
-                        { name = 'air gate 3 - the coast road east',     x = 1100.0,  y = 6650.0, z = 150.0 },
-                        { name = 'air gate 4 - the far turn',            x = 1900.0,  y = 6480.0, z = 180.0 },
-                        { name = 'air gate 5 - the long run back',       x = 700.0,   y = 6450.0, z = 150.0 },
-                        { name = 'air gate 6 - the Paleto farmland',     x = -100.0,  y = 6350.0, z = 120.0 },
-                        { name = 'air gate 7 - down the coast highway',  x = -680.0,  y = 5990.0, z = 130.0 },
+                        { name = 'air gate 1 - climb-out east',          x = 1750.0, y = 6430.0, z = 90.0 },
+                        { name = 'air gate 2 - back over the road',      x = 1000.0, y = 6500.0, z = 150.0 },
+                        { name = 'air gate 3 - the high run west',       x = 100.0,  y = 6450.0, z = 190.0 },
+                        { name = 'air gate 4 - the town turn',           x = -300.0, y = 6300.0, z = 140.0 },
+                        { name = 'air gate 5 - the proven ceiling',      x = 300.0,  y = 6500.0, z = 200.0 },
+                        { name = 'air gate 6 - east again, lower',       x = 1200.0, y = 6500.0, z = 130.0 },
+                        { name = 'air gate 7 - descending back in',      x = 0.0,    y = 6550.0, z = 90.0 },
                     },
-                    finish = { name = 'Finish gate - low over the beach', x = -1150.0, y = 6470.0, z = 60.0 },
+                    finish = { name = 'Finish gate - the beach road bend', x = -180.0, y = 6500.0, z = 60.0 },
                 },
             },
         },

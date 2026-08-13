@@ -242,7 +242,11 @@ RegisterNetEvent('tri:garage', function(grant)
     else
         local last = course.waypoints[(grant.at or 1) - 1]
         local next_ = course.waypoints[grant.at or 1]
-        local back  = (last and last.coords) or course.start
+        -- Dry-checked, not assumed (TriDryWaypointBefore, client/main.lua):
+        -- a replacement vehicle goes to the last waypoint that passes the
+        -- water test, so it lands beside its rider's own dry respawn -
+        -- never at a point somebody drowned near.
+        local back  = TriDryWaypointBefore(course, grant.at)
 
         if grant.leg == 'air' and last and last.kind == 'cp' then
             vehicle = placeInAir(hash, last.coords,
