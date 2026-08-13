@@ -357,9 +357,17 @@ Config = {
     -- GROUNDED on the leg configs) snap to the terrain, so a z below is
     -- advisory; most ground points reuse pint-verified Paleto coordinates
     -- anyway. The air gates are invented outright, at 110-180m over the
-    -- flat coastal land around Paleto - never over the sea, by Darren's
-    -- order ("don't do the Tri in water") - where the 45m gate radius
-    -- forgives everything except an actual crash.
+    -- flat coastal land around Paleto, where the 45m gate radius forgives
+    -- everything except an actual crash.
+    --
+    -- NOTHING ABOUT THIS COURSE MAY REQUIRE TOUCHING WATER. Darren has now
+    -- said so twice ("don't do the Tri in water. it's well hard"). Every
+    -- ground checkpoint sits on the beach ROAD, the dune line or a street -
+    -- never the surf - because the ground probe over water answers with the
+    -- SEABED and the ring drowns (the client clamps the snap to the water
+    -- surface as a backstop, but the course must not lean on it). If you
+    -- are placing a point and wondering whether the tide reaches it, you
+    -- are already too close to the sea.
     --
     -- The shape, once tagged (copy the commented line, fill in the numbers):
     --
@@ -385,38 +393,40 @@ Config = {
             start = { name = 'Start line - the Paleto pub', x = -292.0, y = 6256.0, z = 31.4, h = 0.0 },
 
             legs  = {
-                -- ~585m, call it a minute and a bit of wheezing: up the
-                -- street, along the beach road, down onto the sand. All
-                -- pint-verified spots.
+                -- ~590m, call it a minute and a half of wheezing: up the
+                -- street, over the town's west fields to the dune road, then
+                -- along the beach road west to the bikes. Every point is a
+                -- pint-verified street or road spot at z 15-32 - the leg
+                -- looks at the sea the whole way and never goes near it.
                 run  = {
                     checkpoints = {
                         { name = 'run cp 1 - up the street',      x = -275.0, y = 6330.0, z = 32.0 },
-                        { name = 'run cp 2 - beach road east',    x = -160.0, y = 6560.0, z = 31.0 },
-                        { name = 'run cp 3 - down onto the sand', x = -260.0, y = 6720.0, z = 6.0 },
+                        { name = 'run cp 2 - the dune road',      x = -450.0, y = 6560.0, z = 15.0 },
+                        { name = 'run cp 3 - beach road west',    x = -560.0, y = 6520.0, z = 20.0 },
                     },
                 },
 
-                -- ~3.1km, about two minutes: west down the whole beach, up
-                -- the dune at the far end, out to the coast highway by the
-                -- Chiliad trailhead - the closest this leg now gets to the
-                -- mountain it used to cross - back along the dune road, then
-                -- west again to the planes, straight through the oncoming
-                -- traffic of everyone still between cp 1 and cp 4.
+                -- ~3.1km, about two minutes: west along the dune line above
+                -- the beach, out to the coast highway by the Chiliad
+                -- trailhead - the closest this leg now gets to the mountain
+                -- it used to cross - a big loop through the east fields,
+                -- then back along the dune road and west to the planes,
+                -- straight through the oncoming traffic of everyone still
+                -- between the bikes and cp 2.
                 --
-                -- The beach checkpoints sit UP the sand, well clear of the
-                -- surf line (Darren: "don't do the Tri in water") - a 12m
-                -- ring that grazes the sea invites somebody to ride through
-                -- the shallows for the racing line, and a drowned sanchez is
-                -- a slower joke than a dry one.
+                -- Every checkpoint is on the dune road, the highway or the
+                -- fields - the sand below is scenery, and riding on it is a
+                -- choice rather than a requirement. The old beach-line
+                -- checkpoints at z 4-8 were where the ground probe could
+                -- answer with seabed; nothing here sits below z 15.
                 moto = {
-                    transition = { name = 'The bikes - on the sand', x = -310.0, y = 6740.0, z = 4.0, h = 0.0 },
+                    transition = { name = 'The bikes - the dune road', x = -660.0, y = 6470.0, z = 16.0, h = 109.0 },
                     checkpoints = {
-                        { name = 'moto cp 1 - down the beach',    x = -560.0,  y = 6650.0, z = 6.0 },
-                        { name = 'moto cp 2 - more beach',        x = -790.0,  y = 6550.0, z = 7.0 },
-                        { name = 'moto cp 3 - the far towel',     x = -1030.0, y = 6440.0, z = 7.0 },
-                        { name = 'moto cp 4 - up the dune',       x = -1150.0, y = 6300.0, z = 20.0 },
-                        { name = 'moto cp 5 - the trailhead',     x = -680.0,  y = 5990.0, z = 17.0 },
-                        { name = 'moto cp 6 - the dune road',     x = -450.0,  y = 6560.0, z = 15.0 },
+                        { name = 'moto cp 1 - the west dune',        x = -1150.0, y = 6300.0, z = 20.0 },
+                        { name = 'moto cp 2 - the trailhead',        x = -680.0,  y = 5990.0, z = 17.0 },
+                        { name = 'moto cp 3 - the east fields',      x = -90.0,   y = 6420.0, z = 31.5 },
+                        { name = 'moto cp 4 - the dune road again',  x = -450.0,  y = 6560.0, z = 15.0 },
+                        { name = 'moto cp 5 - back along the top',   x = -800.0,  y = 6420.0, z = 15.0 },
                     },
                 },
 

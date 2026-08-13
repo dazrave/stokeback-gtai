@@ -51,6 +51,17 @@ local function snapped(waypoint)
         -- where the first surface going down IS the ground.
         local found, z = GetGroundZFor_3dCoord(at.x, at.y, at.z + 50.0, false)
         if not found then return at end
+
+        -- The "ground" the probe answers with can be the SEABED: water is
+        -- not ground, so a column even slightly into the surf resolves to
+        -- the sea floor and the ring drowns. A grounded checkpoint may
+        -- never resolve below the water surface, whatever coordinate it
+        -- was given - tonight's made-up ones or a future tag from a phone
+        -- held over the shallows. Darren, twice now: "don't do the Tri in
+        -- water."
+        local wet, sea = GetWaterHeightNoWaves(at.x, at.y, at.z + 50.0)
+        if wet and sea > z then z = sea end
+
         ground[key] = z
     end
 
