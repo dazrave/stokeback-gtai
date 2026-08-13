@@ -32,6 +32,11 @@ local function M()
     return state.mission and Config.missions[state.mission] or nil
 end
 
+-- Defined at the bottom with the rest of the presence plumbing, declared here
+-- because the holdout and secure loops above it call it. Without this it
+-- resolves as a nil global and the stage tick dies on the spot.
+local circleManned
+
 -- Empty streets for the whole campaign, not just while a wave is up. core
 -- arbitrates so two modes can't fight over the density natives, and it drops
 -- the claim by itself if this resource falls over.
@@ -423,7 +428,7 @@ RegisterNetEvent('pint:presence', function(inZone, inVehicle, alive)
 end)
 
 -- True when at least one living player is stood in the circle on foot.
-local function circleManned(stage)
+function circleManned(stage)
     local now      = GetGameTimer()
     local inCarOk  = stage and stage.holdInVehicle
 
