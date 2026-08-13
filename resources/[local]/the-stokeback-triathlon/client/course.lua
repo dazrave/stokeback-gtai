@@ -24,6 +24,39 @@ local memo = {
 -- count as "claiming" - that is the phase check on the arrival loop below.
 local SHOWING = { countdown = true, racing = true, runout = true }
 
+-- ===== the ground's casting vote =====
+-- Darren, game night 2026-08-13: "checkpoints other than air are on the
+-- ground, not floating." A grounded waypoint (stamped in shared/course.lua
+-- from the leg's GROUNDED flag) trusts its x,y and treats its z as advisory:
+-- the terrain under it decides where the ring sits and where the radius is
+-- measured from, so a made-up default z - or a future tag taken at the wrong
+-- height - can never hang a checkpoint in space or bury it. Air gates keep
+-- their configured altitude; hanging in space is their whole job.
+--
+-- Probed once and remembered, keyed on the coordinates rather than the
+-- waypoint index so a rebuilt course can never inherit a stale answer. The
+-- probe only answers once collision has streamed in near the player; until
+-- then the configured z stands, which at that distance only a blip can see.
+local ground = {} -- ['x,y'] = the z the terrain answered for that column
+
+local function snapped(waypoint)
+    if not waypoint.grounded then return waypoint.coords end
+
+    local at  = waypoint.coords
+    local key = ('%.1f,%.1f'):format(at.x, at.y)
+
+    if ground[key] == nil then
+        -- From well above the configured guess, so a z tagged low never
+        -- hides the real surface. These waypoints are placed on open ground,
+        -- where the first surface going down IS the ground.
+        local found, z = GetGroundZFor_3dCoord(at.x, at.y, at.z + 50.0, false)
+        if not found then return at end
+        ground[key] = z
+    end
+
+    return { x = at.x, y = at.y, z = ground[key], h = at.h }
+end
+
 local function nextWaypoint()
     local state = TriState()
     if not state.inRace or not state.course then return nil end
@@ -123,7 +156,7 @@ CreateThread(function()
             Wait(300)
         else
             local legCfg = Config.legs[waypoint.leg] or {}
-            local at     = waypoint.coords
+            local at     = snapped(waypoint) -- grounded rings sit on the terrain
             local me     = GetEntityCoords(PlayerPedId())
             local gap    = #(vector3(at.x, at.y, at.z) - me)
 
@@ -169,7 +202,9 @@ CreateThread(function()
 
         if not waypoint or (phase ~= 'racing' and phase ~= 'runout') then
             Wait(300)
-        elseif SBM.inRadius(waypoint.coords, waypoint.radius or 5.0) then
+        -- The claim measures from the snapped point too, or a ring drawn on
+        -- the terrain could sit outside the radius it is checked against.
+        elseif SBM.inRadius(snapped(waypoint), waypoint.radius or 5.0) then
             local ok, offence = meets(waypoint)
             local now = GetGameTimer()
 

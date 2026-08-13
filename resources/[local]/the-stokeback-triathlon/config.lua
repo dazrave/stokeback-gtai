@@ -28,12 +28,14 @@ Config = {
         -- fence before six people are stood waiting.
         MIN_PLAYERS = 1,
 
-        -- 'alive' on purpose, and it is the funniest knob in the file: the
-        -- obstacle course runs through a living city, so the traffic, the
-        -- pedestrians and the number 19 bus are all part of the obstacle
-        -- course. Set 'sparse' or 'empty' the first time somebody gets ended
-        -- by a taxi and demands a fair race.
-        POPULATION = 'alive',
+        -- 'empty' by Darren's order (game night 2026-08-13): "no vehicles or
+        -- police other than the ones for the race itself." The living city -
+        -- the traffic, the pedestrians, the number 19 bus as part of the
+        -- obstacle course - was the funniest knob in the file, and the owner
+        -- has overruled it. Core does the rest: zero ambient density, no
+        -- parked cars, no random patrol cops, and the heat system reads the
+        -- empty city and stands its coppers down on top of POLICE below.
+        POPULATION = 'empty',
 
         -- No NPC law. Nobody wants the final leg decided by a police
         -- helicopter taking an interest in six biplanes over Vinewood.
@@ -58,7 +60,16 @@ Config = {
             CHECKPOINT_WORD = 'checkpoint',
             RADIUS          = 4.0,  -- running checkpoint radius
             REQUIRE         = 'foot', -- on your own two feet or it does not count
-            TARGET_S        = 300,  -- what a decent runner should manage
+            TARGET_S        = 60,   -- Darren's retiming: about a minute of running
+
+            -- (+) Grounded legs snap their checkpoints to the terrain under
+            -- the tagged x,y (Darren: "checkpoints other than air are on the
+            -- ground, not floating"). The configured z is advisory: the
+            -- client probes the ground for the ring and the claim, and the
+            -- server measures grounded claims flat, so a made-up default z -
+            -- or a tag taken at the wrong height - can never leave a
+            -- checkpoint hanging in space or buried where nobody can claim it.
+            GROUNDED        = true,
             BLIP_COLOUR     = 5,    -- yellow
             MARKER_TYPE     = 1,    -- cylinder on the deck
             MARKER_HEIGHT   = 2.0,
@@ -72,7 +83,8 @@ Config = {
             TRANSITION_LABEL  = 'the bikes',
             REQUIRE           = 'vehicle',
             MODEL             = 'sanchez', -- one identical dirt bike for everyone
-            TARGET_S          = 300,
+            TARGET_S          = 120,  -- Darren's retiming: two minutes on the bike
+            GROUNDED          = true, -- (+) same terrain snap as the run
             BLIP_COLOUR       = 47,   -- orange
             MARKER_TYPE       = 1,
             MARKER_HEIGHT     = 4.0,
@@ -86,7 +98,8 @@ Config = {
             TRANSITION_LABEL  = 'the planes',
             REQUIRE           = 'vehicle',
             MODEL             = 'duster', -- the only actual biplane in the game
-            TARGET_S          = 300,
+            TARGET_S          = 180,  -- Darren's retiming: three minutes in the air
+            GROUNDED          = false, -- gates hang at their configured altitude by design
             BLIP_COLOUR       = 3,    -- blue
             MARKER_TYPE       = 28,   -- sphere, hanging in the air
             MARKER_HEIGHT     = 0.0,
@@ -117,7 +130,11 @@ Config = {
     vehicles = {
         REPLACE_DELAY_S = 3,   -- vehicle replacement delay
         SLOT_SPACING    = 6.0, -- (+) side by side across the transition, per racer
-        AIR_SPACING     = 22.0, -- (+) planes need considerably more elbow room
+        AIR_SPACING     = 16.0, -- (+) planes need considerably more elbow room.
+                                -- Trimmed from 22 when the line-up moved onto
+                                -- a beach: still comfortably over a duster's
+                                -- wingspan, and the shorter line keeps the far
+                                -- bays on the flat sand instead of up the dune.
         RECOVER_COOLDOWN_S = 8, -- (+) rate limit on "my bike is in a lake"
     },
 
@@ -185,7 +202,7 @@ Config = {
         -- the provisional two minute placeholder, which read as a broken race.
         READY_LINE   = 'Hold. The steward is finding his whistle.',
         LEG_LINES    = { -- said to one racer as they start a leg. %d is the target, in minutes
-            run  = 'On foot. About %d minutes if you are any good, which nobody here is.',
+            run  = 'On foot. About a minute if you are any good, which nobody here is.',
             moto = 'On the bike. Off-road, over the top, and please stop using the road.',
             air  = 'Into the plane. It is a biplane. It was the cheapest thing on the forecourt.',
         },
@@ -327,14 +344,21 @@ Config = {
     -- 'the-stokeback-triathlon') land in these same tables and REPLACE this
     -- course, and the moment they do, nothing in here is guessed again.
     --
-    -- The guessing was done with the safety catch on. Run and moto
-    -- checkpoints are 3D radius checks with no ground snap, so every one of
-    -- them reuses a coordinate somebody already stood on - pint's verified
-    -- Paleto Bay and Sandy Shores points - plus the one real tag this mode
-    -- has ever been given: Rory's Mount Chiliad summit. It is moto cp 5.
-    -- Of course it is. Only the air gates are invented outright, and those
-    -- sit at 90-240m over the Alamo Sea and its flat shores, where the 45m
-    -- gate radius forgives everything except an actual crash.
+    -- Retimed on Darren's order, same night: about a minute of running, two
+    -- minutes of motocross, three of biplanes - so the whole default course
+    -- is now short and local to Paleto Bay. The Mount Chiliad summit
+    -- crossing did not survive that arithmetic: a two-minute moto leg
+    -- cannot contain a mountain. Rory's summit tag STAYS ON FILE for the
+    -- real tagged course to route through later - it is (441.2, 5574.7,
+    -- 793.4, h 93.5), the only real tag this mode has ever been given, and
+    -- it deserves a course with room for it.
+    --
+    -- The guessing was done with the safety catch on. Grounded legs (see
+    -- GROUNDED on the leg configs) snap to the terrain, so a z below is
+    -- advisory; most ground points reuse pint-verified Paleto coordinates
+    -- anyway. The air gates are invented outright, at 100-240m over the
+    -- open water of the bay, where the 45m gate radius forgives everything
+    -- except an actual crash.
     --
     -- The shape, once tagged (copy the commented line, fill in the numbers):
     --
@@ -360,62 +384,54 @@ Config = {
             start = { name = 'Start line - the Paleto pub', x = -292.0, y = 6256.0, z = 31.4, h = 0.0 },
 
             legs  = {
-                -- ~1.7km: up the street, onto the sand, then the whole of
-                -- Paleto beach westward along the waterline. Every z here is a
-                -- pint-verified spawn/garrison/wreck spot, because a running
-                -- ring is 4m in three dimensions and guessing ground height is
-                -- how checkpoints become unclaimable.
+                -- ~585m, call it a minute and a bit of wheezing: up the
+                -- street, along the beach road, down onto the sand. All
+                -- pint-verified spots.
                 run  = {
                     checkpoints = {
-                        { name = 'run cp 1 - up the street',       x = -275.0,  y = 6330.0, z = 32.0 },
-                        { name = 'run cp 2 - beach road east',     x = -160.0,  y = 6560.0, z = 31.0 },
-                        { name = 'run cp 3 - down onto the sand',  x = -260.0,  y = 6720.0, z = 6.0 },
-                        { name = 'run cp 4 - the waterline',       x = -330.0,  y = 6780.0, z = 3.0 },
-                        { name = 'run cp 5 - still the waterline', x = -560.0,  y = 6690.0, z = 4.5 },
-                        { name = 'run cp 6 - more beach',          x = -790.0,  y = 6590.0, z = 6.0 },
-                        { name = 'run cp 7 - the far towel',       x = -1030.0, y = 6480.0, z = 5.0 },
-                        { name = 'run cp 8 - up the dune',         x = -1150.0, y = 6300.0, z = 20.0 },
+                        { name = 'run cp 1 - up the street',      x = -275.0, y = 6330.0, z = 32.0 },
+                        { name = 'run cp 2 - beach road east',    x = -160.0, y = 6560.0, z = 31.0 },
+                        { name = 'run cp 3 - down onto the sand', x = -260.0, y = 6720.0, z = 6.0 },
                     },
                 },
 
-                -- ~7km: back east along the sand PAST the runners still on
-                -- their leg, off the beach, down the coast highway to the
-                -- trailhead, then over the top of Mount Chiliad - the summit
-                -- is Rory's own tag, the only real one on the board - and
-                -- down the east face into Grapeseed and Sandy Shores, with a
-                -- Yellow Jack drive-past because of course there is.
+                -- ~3.1km, about two minutes: west down the whole beach, up
+                -- the dune at the far end, out to the coast highway by the
+                -- Chiliad trailhead - the closest this leg now gets to the
+                -- mountain it used to cross - back along the dune road, then
+                -- west again to the planes, straight through the oncoming
+                -- traffic of everyone still between cp 1 and cp 4.
                 moto = {
-                    transition = { name = 'The bikes - west end of the beach', x = -1350.0, y = 6370.0, z = 8.0, h = 289.0 },
+                    transition = { name = 'The bikes - on the sand', x = -310.0, y = 6740.0, z = 4.0, h = 0.0 },
                     checkpoints = {
-                        { name = 'moto cp 1 - back down the sand',    x = -1030.0, y = 6480.0, z = 5.0 },
-                        { name = 'moto cp 2 - past the runners',      x = -790.0,  y = 6590.0, z = 6.0 },
-                        { name = 'moto cp 3 - off the beach',         x = -450.0,  y = 6560.0, z = 15.0 },
-                        { name = 'moto cp 4 - the coast highway',     x = -680.0,  y = 5990.0, z = 17.0 },
-                        { name = 'moto cp 5 - MOUNT CHILIAD, the top (Rory\'s tag)', x = 441.2, y = 5574.7, z = 793.4 },
-                        { name = 'moto cp 6 - down into Grapeseed',   x = 1687.0,  y = 4929.0, z = 42.1 },
-                        { name = 'moto cp 7 - Marina Drive',          x = 1784.3,  y = 3330.6, z = 41.3 },
-                        { name = 'moto cp 8 - the Yellow Jack drive-past', x = 1975.5, y = 3043.5, z = 46.8 },
+                        { name = 'moto cp 1 - down the beach',    x = -560.0,  y = 6690.0, z = 4.5 },
+                        { name = 'moto cp 2 - more beach',        x = -790.0,  y = 6590.0, z = 6.0 },
+                        { name = 'moto cp 3 - the far towel',     x = -1030.0, y = 6480.0, z = 5.0 },
+                        { name = 'moto cp 4 - up the dune',       x = -1150.0, y = 6300.0, z = 20.0 },
+                        { name = 'moto cp 5 - the trailhead',     x = -680.0,  y = 5990.0, z = 17.0 },
+                        { name = 'moto cp 6 - the dune road',     x = -450.0,  y = 6560.0, z = 15.0 },
                     },
                 },
 
-                -- Sandy Shores strip, planes facing straight down the runway
-                -- at the sea, then a lap of the Alamo: climb out west, right
-                -- turn up the far shore, high over the Grapeseed farms, a
-                -- McKenzie Field flyby (the airfield they DIDN'T get), then
-                -- descending gates back down to rooftop height over Sandy
-                -- Shores and a red gate over the runway they left from.
+                -- ~8km, about three minutes: the planes sit on the west
+                -- beach pointing back east down a kilometre of flat sand,
+                -- which is the runway, and nobody is to think about it too
+                -- hard. Take off over the moto leg, climb out past Procopio
+                -- Point, a great lap of the bay over open water, back in
+                -- past Paleto Cove, and a red gate low over the beach to
+                -- finish in front of everyone still running.
                 air  = {
-                    transition = { name = 'The planes - Sandy Shores strip', x = 1747.0, y = 3274.0, z = 41.0, h = 105.0 },
+                    transition = { name = 'The planes - west end of the beach', x = -1350.0, y = 6370.0, z = 8.0, h = 295.0 },
                     checkpoints = {
-                        { name = 'air gate 1 - climb-out over the shore', x = 1150.0, y = 3150.0, z = 120.0 },
-                        { name = 'air gate 2 - west end of the Alamo',    x = 700.0,  y = 3500.0, z = 180.0 },
-                        { name = 'air gate 3 - the north-west shore',     x = 1000.0, y = 4200.0, z = 220.0 },
-                        { name = 'air gate 4 - high over the farms',      x = 1750.0, y = 4600.0, z = 240.0 },
-                        { name = 'air gate 5 - McKenzie Field flyby',     x = 2121.0, y = 4796.0, z = 200.0 },
-                        { name = 'air gate 6 - Galilee, descending',      x = 2150.0, y = 4000.0, z = 150.0 },
-                        { name = 'air gate 7 - low over Sandy Shores',    x = 2000.0, y = 3320.0, z = 90.0 },
+                        { name = 'air gate 1 - climb-out over the water', x = -350.0,  y = 6900.0, z = 100.0 },
+                        { name = 'air gate 2 - off Procopio Point',       x = 600.0,   y = 7300.0, z = 160.0 },
+                        { name = 'air gate 3 - the far east turn',        x = 1500.0,  y = 7600.0, z = 220.0 },
+                        { name = 'air gate 4 - the top of the lap',       x = 700.0,   y = 8000.0, z = 240.0 },
+                        { name = 'air gate 5 - the long run west',        x = -800.0,  y = 7900.0, z = 220.0 },
+                        { name = 'air gate 6 - the Paleto Cove turn',     x = -2200.0, y = 7350.0, z = 160.0 },
+                        { name = 'air gate 7 - back in over the cove',    x = -1650.0, y = 6800.0, z = 100.0 },
                     },
-                    finish = { name = 'Finish gate - over the runway', x = 1770.0, y = 3280.0, z = 55.0 },
+                    finish = { name = 'Finish gate - low over the beach', x = -1150.0, y = 6470.0, z = 60.0 },
                 },
             },
         },

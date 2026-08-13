@@ -127,11 +127,22 @@ function TriCourse.build(name)
                 require = 'none',
                 label   = legCfg.TRANSITION_LABEL or 'the transition',
                 colour  = legCfg.BLIP_COLOUR,
+                -- Always: you arrive at a line of parked vehicles physically,
+                -- on the ground, whatever leg they belong to.
+                grounded = true,
             }
         end
 
         local checkpoints = points(data.checkpoints, lift)
         totals[leg] = #checkpoints
+
+        -- Stamped here, from the leg's config, so the client's ground probe
+        -- and the server's flat distance check can never disagree about
+        -- which waypoints live on the terrain. Only a leg that explicitly
+        -- says GROUNDED = false (the air gates) keeps its configured z as
+        -- gospel; everything else treats z as advisory and the ground as
+        -- the authority.
+        local grounded = legCfg.GROUNDED ~= false
 
         for index, at in ipairs(checkpoints) do
             waypoints[#waypoints + 1] = {
@@ -145,6 +156,7 @@ function TriCourse.build(name)
                 model   = legCfg.MODEL,
                 label   = ('%s %d/%d'):format(legCfg.CHECKPOINT_WORD or 'checkpoint', index, #checkpoints),
                 colour  = legCfg.BLIP_COLOUR,
+                grounded = grounded,
             }
         end
 
@@ -159,6 +171,7 @@ function TriCourse.build(name)
                 model   = legCfg.MODEL,
                 label   = 'THE FINISH',
                 colour  = 1, -- red: the only one that ends anything
+                grounded = grounded,
             }
         end
     end

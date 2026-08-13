@@ -53,9 +53,16 @@ local function vehicleOf(src)
     return vehicle
 end
 
-local function distance(a, b)
+-- `flat` ignores height: a grounded waypoint's configured z is advisory (the
+-- client snaps its ring to the terrain - see GROUNDED in config.lua), and the
+-- server has no terrain to ask, so holding a racer to a guessed height would
+-- refuse honest claims. The racer is stood on the ground either way; x and y
+-- are the part he cannot fake. Air gates keep all three dimensions -
+-- altitude IS the discipline.
+local function distance(a, b, flat)
     if not a or not b then return nil end
-    local dx, dy, dz = a.x - b.x, a.y - b.y, a.z - b.z
+    local dx, dy = a.x - b.x, a.y - b.y
+    local dz = flat and 0 or (a.z - b.z)
     return math.sqrt(dx * dx + dy * dy + dz * dz)
 end
 
@@ -203,7 +210,7 @@ function TriRace.claim(src, index)
     local waypoint = course.waypoints[index]
     if not waypoint then return false, 'no such checkpoint' end
 
-    local gap = distance(coordsOf(src), waypoint.coords)
+    local gap = distance(coordsOf(src), waypoint.coords, waypoint.grounded)
     if gap and gap > (waypoint.radius or 10.0) * (Config.rules.RADIUS_SLACK or 1.5) then
         return false, 'not actually there'
     end
