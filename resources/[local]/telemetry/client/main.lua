@@ -209,7 +209,13 @@ CreateThread(function()
         Wait(BLIP_MS)
 
         local me   = GetPlayerServerId(PlayerId())
-        local show = not engaged and not inChase
+        -- Gated on the server's free-roam flag, NOT on `engaged`: when a
+        -- gametype claims the world it STOPS infected mid-engage, so the
+        -- engaged=false broadcast never comes and the stale flag kept the
+        -- radar dark all night. The flag is re-sent every second, so it
+        -- cannot stick. inChase stays: it arrives instantly, and a second of
+        -- fugitive dot at chase start is a second too many.
+        local show = freeroam and not inChase
         local seen = {}
 
         if show then
@@ -370,8 +376,11 @@ CreateThread(function()
 
         if not IsEntityDead(ped) then
             deadSince = 0
-        elseif engaged or inChase then
-            -- A mode owns the body: pint revives, chase respawns its own cops.
+        elseif not freeroam or inChase then
+            -- A mode owns the body: pint revives, chase respawns its own
+            -- cops. Server free-roam truth, not `engaged` - the stale-flag
+            -- failure this backstop exists for could also stick the flag
+            -- that gates the backstop.
             deadSince = 0
         else
             if deadSince == 0 then
