@@ -425,7 +425,8 @@ CreateThread(function()
                 -- The favour, when it is theirs to call. Only ever on their
                 -- screens: see NickPolice().
                 if state.police.heliReady then
-                    second = '~b~AIR SUPPORT AVAILABLE~w~ - press ~INPUT_DETONATE~'
+                    second = '~b~AIR SUPPORT AVAILABLE~w~ - press '
+                        .. (Config.controls.SECONDARY_LABEL or 'G')
                 end
             else
                 local purse = state.purse

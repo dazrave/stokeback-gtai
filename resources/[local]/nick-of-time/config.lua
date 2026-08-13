@@ -405,6 +405,10 @@ Config = {
     controls = {
         PRIMARY   = 38, -- INPUT_PICKUP (E)
         SECONDARY = 47, -- INPUT_DETONATE (G)
+        -- ~INPUT_*~ tokens only resolve in help text, not in the draw-text
+        -- HUD - there they come out as raw glyph codes ("press b_6").
+        -- The HUD prints this instead; change it if you rebind SECONDARY.
+        SECONDARY_LABEL = 'G',
     },
 
     hud = { x = 0.5, y = 0.055, scale = 0.55 },
