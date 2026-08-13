@@ -15,6 +15,19 @@ Loadouts = {
         },
     },
 
+    -- The law, foot-chase spec: the cop kit plus the ender nick-of-time's
+    -- scope is explicit about - stop the car with the pistol, stop the man
+    -- with the taser. Fifty cartridges is forever in a ten minute round.
+    taser = {
+        armour  = 50,
+        weapons = {
+            { 'WEAPON_PISTOL',      250 },
+            { 'WEAPON_STUNGUN',     50  },
+            { 'WEAPON_NIGHTSTICK',  0   },
+            { 'WEAPON_FLASHLIGHT',  0   },
+        },
+    },
+
     -- The rabbit. Wheels and nerve, nothing else.
     unarmed = {
         armour  = 0,

@@ -10,6 +10,7 @@ local memo = {
     hits        = 0,
     onFire      = false,
     nextStutter = 0,
+    coughs      = 0,   -- which of her lines she is on
     hidden      = false,
     inHouse     = 0,   -- game time we entered a safehouse zone
     pressure    = 0,
@@ -93,20 +94,10 @@ CreateThread(function()
     end
 end)
 
--- ===== the heartbeat =====
--- Once a second, to the server and no further. It is what the drain, the stash
--- and the dive are measured against; the police only ever get his position by
--- pointing their eyes at him.
-CreateThread(function()
-    while true do
-        Wait(1000)
-
-        local role, status = NickState()
-        if role == 'robber' and status.phase and status.phase ~= 'idle' then
-            TriggerServerEvent('nick:heartbeat', GetEntityCoords(PlayerPedId()))
-        end
-    end
-end)
+-- (There used to be a position heartbeat here. The server reads his position
+-- off its own copy of the ped now - an event carrying coords was the one
+-- thing a modded client could lie about, and everything worth stealing
+-- measured against it.)
 
 -- ===== the two ways in, and the way out =====
 CreateThread(function()
@@ -277,11 +268,12 @@ CreateThread(function()
 
             if vehicle ~= 0 and GetPedInVehicleSeat(vehicle, -1) == ped then
                 if vehicle ~= memo.lastVehicle then
-                    -- A fresh car is a fresh set of chances.
+                    -- A fresh car is a fresh set of chances, and a fresh voice.
                     memo.lastVehicle = vehicle
                     memo.bodyHealth  = GetVehicleBodyHealth(vehicle)
                     memo.hits        = 0
                     memo.onFire      = false
+                    memo.coughs      = 0
                     ClearEntityLastDamageEntity(vehicle)
                 end
 
@@ -298,14 +290,20 @@ CreateThread(function()
                 memo.bodyHealth = body
 
                 -- On her last legs: the engine cuts out in little bursts, so
-                -- every junction becomes a question.
+                -- every junction becomes a question. Her commentary escalates
+                -- through Config.damage.COUGH_LINES in order and loops.
                 if engine <= Config.damage.DAMAGE_STUTTER_THRESHOLD and not memo.onFire
                     and GetGameTimer() >= memo.nextStutter then
                     memo.nextStutter = GetGameTimer() + Config.damage.STUTTER_EVERY_MS
 
+                    local lines = Config.damage.COUGH_LINES
+                    if lines and #lines > 0 then
+                        memo.coughs = memo.coughs + 1
+                        NickHUD.notify('~y~' .. lines[1 + ((memo.coughs - 1) % #lines)])
+                    end
+
                     local band = Config.damage.DAMAGE_STUTTER_MS
                     SetVehicleEngineOn(vehicle, false, true, true)
-                    NickHUD.notify('~y~She is coughing.')
                     Wait(math.random(band[1], band[2]))
                     SetVehicleEngineOn(vehicle, true, true, false)
                 end
@@ -358,6 +356,7 @@ end)
 -- limps, he goes down long enough to be cuffed - he never dies.
 CreateThread(function()
     local wasHit, nextKnockdown = false, 0
+    local stungun = GetHashKey(Config.kit.TASER_WEAPON)
 
     while true do
         Wait(0)
@@ -368,6 +367,24 @@ CreateThread(function()
             and Config.nonLethal.enabled then
             local ped    = PlayerPedId()
             local health = GetEntityHealth(ped)
+
+            -- The taser, the scope's intended foot-chase ender. GTA's own
+            -- stun ragdoll on a player is over in a blink; a hit extends
+            -- into the same knockdown window the gunfire floor uses, on the
+            -- same rate limit, so he cannot be chain-tased into a nap. The
+            -- damage flag latches, so it is cleared even when the rate limit
+            -- swallows the hit - a stale one must not fire seconds later.
+            if HasPedBeenDamagedByWeapon(ped, stungun, 0) then
+                ClearPedLastWeaponDamage(ped)
+
+                local knock = Config.nonLethal.knockdown
+                if knock.enabled and not IsPedInAnyVehicle(ped, false)
+                    and GetGameTimer() >= nextKnockdown then
+                    nextKnockdown = GetGameTimer() + knock.everyMs
+                    SetPedToRagdoll(ped, knock.downMs, knock.downMs, 0, true, true, false)
+                    NickHUD.notify('~r~TASED.~w~ Everything is pins and needles.')
+                end
+            end
 
             if not IsEntityDead(ped) and health < Config.nonLethal.floorHealth then
                 SetEntityHealth(ped, Config.nonLethal.floorHealth)

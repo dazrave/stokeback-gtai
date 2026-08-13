@@ -14,15 +14,17 @@ NickHeist = {}
 local L = Config.looting
 local S = Config.safehouses
 local E = Config.escalation
+local F = Config.flavour
 
 local state = {
     sites      = {},  -- this round's loot sites, with what's left in each
     houses     = {},  -- this round's safehouses (seeded, same every round of a session)
-    job        = nil, -- { index, method, alarmAt, alarmed }
+    job        = nil, -- { index, method, alarmAt, alarmed, take }
     carried    = 0,   -- in the bag, lost on arrest or at full time
     stashed    = 0,   -- through a safehouse door: the only number that scores
     taken      = 0,   -- lifted out of shops in total
     publicTaken = 0,  -- ...and how much of that the police have been told about
+    pettiest   = nil, -- the least dignified completed job, for the retelling
     events     = {},
 }
 
@@ -72,7 +74,11 @@ function NickHeist.begin()
         }
     end
 
-    setState({
+    -- A fresh table, NOT setState: `job = nil` in a constructor handed to a
+    -- merge is simply absent, so an arrest mid-job would quietly carry the
+    -- half-finished job into the next round - the exact trap round.lua's own
+    -- state constructor documents.
+    state = {
         sites       = sites,
         houses      = NickSession.pick(Config.locations.safehouses, S.SAFEHOUSE_PER_ROUND, 31),
         job         = nil,
@@ -80,12 +86,24 @@ function NickHeist.begin()
         stashed     = 0,
         taken       = 0,
         publicTaken = 0,
+        pettiest    = nil,
         events      = {},
-    })
+    }
 end
 
 function NickHeist.reset()
-    setState({ job = nil, carried = 0, stashed = 0, taken = 0, publicTaken = 0, events = {} })
+    -- Same lesson as begin(): a fresh table, so the nils actually land.
+    state = {
+        sites       = {},
+        houses      = {},
+        job         = nil,
+        carried     = 0,
+        stashed     = 0,
+        taken       = 0,
+        publicTaken = 0,
+        pettiest    = nil,
+        events      = {},
+    }
 end
 
 -- What the clients get told at the whistle: where the shops and this round's
@@ -126,7 +144,30 @@ local function endJob(reason)
     if not job then return end
 
     local site = state.sites[job.index]
-    setState({ job = nil })
+    local take = job.take or 0
+
+    -- The least dignified completed job of the round, remembered for the
+    -- retelling. £0 qualifies magnificently.
+    local pettiest = state.pettiest
+    if site and take < (F.PITIFUL_JOB_GBP or 0) and (not pettiest or take < pettiest.take) then
+        pettiest = { name = site.name, take = take, method = job.method }
+    end
+
+    -- A fresh table, NOT setState: `{ job = nil }` is an EMPTY constructor in
+    -- Lua, so the merge kept the old job alive - which meant one job per
+    -- round, ever ("already at it" at every shop after the first) and an
+    -- exit event pushed every tick until the whistle.
+    state = {
+        sites       = state.sites,
+        houses      = state.houses,
+        job         = nil,
+        carried     = state.carried,
+        stashed     = state.stashed,
+        taken       = state.taken,
+        publicTaken = state.publicTaken,
+        pettiest    = pettiest,
+        events      = state.events,
+    }
 
     -- He's out of the door, so the shopkeeper is on the phone whatever he did
     -- on the way in: this is the "or_exit" half of PUBLIC_VALUE_UPDATE_ON.
@@ -135,8 +176,8 @@ local function endJob(reason)
     push({ kind = 'exit', reason = reason, name = site and site.name, index = job.index })
 end
 
--- Called once a second with the robber's true position (his own client's
--- heartbeat). Everything time-based about a job happens here so there is
+-- Called once a second with the robber's true position (read server-side off
+-- his synced ped). Everything time-based about a job happens here so there is
 -- exactly one clock.
 function NickHeist.tick(pos, dt)
     local job = state.job
@@ -156,9 +197,12 @@ function NickHeist.tick(pos, dt)
     -- quietly - and he is never told which second it is due, because knowing
     -- would turn the choice into arithmetic.
     if not job.alarmed and GetGameTimer() >= job.alarmAt then
-        setState({ job = { index = job.index, method = job.method, alarmAt = job.alarmAt, alarmed = true } })
+        setState({ job = { index = job.index, method = job.method, alarmAt = job.alarmAt,
+                           alarmed = true, take = job.take } })
         publish('alarm')
         push({ kind = 'alarm', index = job.index, name = site.name, x = site.x, y = site.y, z = site.z })
+
+        job = state.job -- the local predates the rewrite; the grab below must not resurrect alarmed=false
     end
 
     if site.left <= 0 then return endJob('empty') end
@@ -183,7 +227,13 @@ function NickHeist.tick(pos, dt)
         stock = site.stock, left = site.left - grab,
     }
 
-    setState({ sites = sites, carried = state.carried + grab, taken = state.taken + grab })
+    setState({
+        sites   = sites,
+        carried = state.carried + grab,
+        taken   = state.taken + grab,
+        job     = { index = job.index, method = job.method, alarmAt = job.alarmAt,
+                    alarmed = job.alarmed, take = (job.take or 0) + grab },
+    })
 end
 
 -- ===== the robber's two decisions =====
@@ -218,7 +268,7 @@ function NickHeist.startJob(index, method, pos)
     end
 
     setState({ job = { index = index, method = smash and 'smash' or 'quiet',
-                       alarmAt = GetGameTimer() + wait * 1000, alarmed = false } })
+                       alarmAt = GetGameTimer() + wait * 1000, alarmed = false, take = 0 } })
 
     return true
 end
@@ -241,6 +291,19 @@ function NickHeist.stash(index, pos)
     end
 
     return true, banked
+end
+
+-- Is this position inside (with slack) one of this round's safehouse zones?
+-- The server grants the dive and "call it a day" off this, so a client
+-- cannot decide to be invisible - or to end the round - on the open road.
+function NickHeist.nearHouse(pos)
+    if not pos then return false end
+
+    for _, house in ipairs(state.houses) do
+        if distance(pos, house) <= S.ZONE_RADIUS * 2.0 then return true end
+    end
+
+    return false
 end
 
 -- ===== what everyone else needs to know =====
@@ -267,6 +330,16 @@ end
 
 function NickHeist.publicTaken()
     return state.publicTaken
+end
+
+function NickHeist.taken()
+    return state.taken
+end
+
+-- For the end-of-round retelling. A copy, so no caller can edit the record.
+function NickHeist.review()
+    local p = state.pettiest
+    return { pettiest = p and { name = p.name, take = p.take, method = p.method } or nil }
 end
 
 -- Stars are cosmetic tonight - there are no AI units for them to summon yet -

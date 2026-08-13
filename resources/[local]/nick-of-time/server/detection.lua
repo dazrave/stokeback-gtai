@@ -23,14 +23,15 @@ NickDetect = {}
 local D = Config.detection
 
 local state = {
-    contact    = 'cold',
-    lastSeen   = nil, -- truth, as at the last sighting
-    lastSeenAt = 0,
-    heading    = nil, -- degrees, the way he was travelling between sightings
-    speed      = 0.0, -- m/s, likewise
-    ghost      = nil, -- where the police THINK he is
-    radius     = 0.0,
-    confidence = 0.0, -- how much of that heading we still believe
+    contact     = 'cold',
+    lastSeen    = nil, -- truth, as at the last sighting
+    lastSeenAt  = 0,
+    heading     = nil, -- degrees, the way he was travelling between sightings
+    speed       = 0.0, -- m/s, likewise
+    ghost       = nil, -- where the police THINK he is
+    radius      = 0.0,
+    confidence  = 0.0, -- how much of that heading we still believe
+    maxUnseenMs = 0,   -- his longest single vanishing act, for the retelling
 }
 
 local function setState(next)
@@ -45,14 +46,15 @@ end
 -- ending it at the whistle.
 function NickDetect.reset()
     state = {
-        contact    = 'cold',
-        lastSeen   = nil,
-        lastSeenAt = 0,
-        heading    = nil,
-        speed      = 0.0,
-        ghost      = nil,
-        radius     = 0.0,
-        confidence = 0.0,
+        contact     = 'cold',
+        lastSeen    = nil,
+        lastSeenAt  = 0,
+        heading     = nil,
+        speed       = 0.0,
+        ghost       = nil,
+        radius      = 0.0,
+        confidence  = 0.0,
+        maxUnseenMs = 0,
     }
 end
 
@@ -77,6 +79,7 @@ function NickDetect.sighting(coords)
     local now = GetGameTimer()
 
     local heading, speed = state.heading, state.speed
+    local maxUnseen = state.maxUnseenMs
 
     if state.lastSeen then
         local dt = (now - state.lastSeenAt) / 1000.0
@@ -91,17 +94,22 @@ function NickDetect.sighting(coords)
             heading = headingOf(dx, dy)
             speed   = math.min(gap / dt, D.SOFT_TRACK_MAX_DRIFT_MPS)
         end
+
+        -- The vanishing act that just ended, if it beats his record.
+        local unseen = now - state.lastSeenAt
+        if unseen > maxUnseen then maxUnseen = unseen end
     end
 
     setState({
-        contact    = 'hard',
-        lastSeen   = { x = coords.x, y = coords.y, z = coords.z },
-        lastSeenAt = now,
-        heading    = heading,
-        speed      = speed,
-        ghost      = { x = coords.x, y = coords.y, z = coords.z },
-        radius     = D.SOFT_TRACK_BASE_RADIUS,
-        confidence = 1.0,
+        contact     = 'hard',
+        lastSeen    = { x = coords.x, y = coords.y, z = coords.z },
+        lastSeenAt  = now,
+        heading     = heading,
+        speed       = speed,
+        ghost       = { x = coords.x, y = coords.y, z = coords.z },
+        radius      = D.SOFT_TRACK_BASE_RADIUS,
+        confidence  = 1.0,
+        maxUnseenMs = maxUnseen,
     })
 end
 
@@ -178,4 +186,16 @@ end
 
 function NickDetect.contact()
     return state.contact
+end
+
+-- For the end-of-round retelling: how invisible was he, really. The streak
+-- still running at the whistle counts - going dark at 4:00 and staying dark
+-- is the best version of the story.
+function NickDetect.review()
+    local ongoing = state.lastSeen and (GetGameTimer() - state.lastSeenAt) or 0
+
+    return {
+        everSeen       = state.lastSeen ~= nil,
+        longestUnseenS = math.floor(math.max(state.maxUnseenMs, ongoing) / 1000),
+    }
 end

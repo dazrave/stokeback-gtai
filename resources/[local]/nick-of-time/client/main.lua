@@ -230,7 +230,11 @@ RegisterNetEvent('nick:banked', function(value)
 end)
 
 RegisterNetEvent('nick:end', function(result, robberName, stashed)
-    setState({ role = nil, status = {}, purse = {}, map = { sites = {}, houses = {} } })
+    -- A fresh table, NOT setState: `role = nil` in a constructor handed to a
+    -- merge is simply absent, so the old role survived the round - and the
+    -- three maintenance loops below, all gated on state.role, kept running
+    -- drive-by, damage and wanted-level overrides into free roam forever.
+    state = { role = nil, status = {}, purse = {}, map = { sites = {}, houses = {} } }
 
     local shards = {
         arrested = { 'NICKED', ('Bag confiscated. %s kept %s.'):format(robberName or '?', NickHUD.money(stashed)) },

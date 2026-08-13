@@ -68,7 +68,9 @@ CreateThread(function()
                 if dist < range
                     and IsEntityOnScreen(to)
                     and HasEntityClearLosToEntity(from, to, D.LOS_FLAGS) then
-                    TriggerServerEvent('nick:see', GetEntityCoords(ped))
+                    -- Just "I can see him": the server reads the position off
+                    -- its own copy of his ped, so no client coords to trust.
+                    TriggerServerEvent('nick:see')
                 end
             end
         end
@@ -221,13 +223,34 @@ RegisterNetEvent('nick:ping', function(kind, at, label)
     PlayPoliceReport('CRIME_STOLEN_VEHICLE_01', 0.0)
 end)
 
+-- Control on the radio as the search warms and cools. Dry by design: morale
+-- is not their department. Lines live in Config.flavour; the server already
+-- keeps the robber off the distribution list, this check is just the belt.
+RegisterNetEvent('nick:radio', function(line)
+    local role = NickState()
+    if role ~= 'police' then return end
+
+    NickHUD.notify(('~b~Control:~w~ %s'):format(line))
+end)
+
 -- ===== kit, death, arrest =====
 RegisterNetEvent('nick:role', function(role)
     pcall(function() exports.spawnmanager:setAutoSpawn(false) end)
 
     if role.isRobber then
-        -- His round ends by arrest or by clock, never by respawn.
-        TriggerEvent('core:respawnPolicy', { kind = 'off' })
+        -- His round ends by arrest or by clock - but the non-lethal floor is
+        -- enforced per frame and can be outrun (a petrol tank going up, a
+        -- long swim), and a dead robber with respawn off would be ten
+        -- minutes of everyone watching a corpse. So he gets up where he
+        -- fell; the delay is the law's window to walk over and nick the
+        -- body, and the bag survives because it only ever lived on the
+        -- server.
+        TriggerEvent('core:respawnPolicy', {
+            kind        = 'where-you-fell',
+            delay       = Config.nonLethal.DIED_RESPAWN_S,
+            downMessage = '~r~That went badly.~w~ You are having a lie down.',
+            upMessage   = '~y~Up. Somehow.~w~ The bag made it too.',
+        })
         return
     end
 
@@ -291,7 +314,11 @@ CreateThread(function()
             local ped = robberPed(status)
             local me  = PlayerPedId()
 
-            if ped and not IsEntityDead(ped) and not IsPedInAnyVehicle(me, false) then
+            -- Dead is not a loophole: the floor can be outrun (see robber.lua)
+            -- and a body that could not be nicked would soft-lock the round,
+            -- so the prompt works on a corpse too. Nicking the body is also
+            -- funnier.
+            if ped and not IsPedInAnyVehicle(me, false) then
                 local dist = #(GetEntityCoords(ped) - GetEntityCoords(me))
 
                 if dist < Config.arrest.RANGE and GetEntitySpeed(ped) < Config.arrest.MAX_SPEED then

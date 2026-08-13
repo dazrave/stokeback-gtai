@@ -7,13 +7,16 @@
 -- of this file. What lives here is the drama - the rota, the endings, and the
 -- one voice that announces things.
 local state = {
-    phase      = 'idle', -- idle | setup | active
-    robber     = nil,    -- server id
-    robberName = nil,
-    startsAt   = 0,
-    endsAt     = 0,
-    lastTick   = 0,
-    pos        = nil,    -- the robber's own heartbeat; never published as-is
+    phase       = 'idle', -- idle | setup | active
+    robber      = nil,    -- server id
+    robberName  = nil,
+    startsAt    = 0,
+    endsAt      = 0,
+    lastTick    = 0,
+    pos         = nil,    -- where the server last read him; never published as-is
+    copSpawn    = nil,    -- this round's muster point, kept for late joiners
+    lastContact = 'cold', -- for control's radio commentary
+    radioAt     = 0,      -- next moment control is allowed to speak
 }
 
 local function setState(next)
@@ -33,6 +36,47 @@ local function tell(message)
         args  = { 'nick', message },
     })
     print('[nick] ' .. message)
+end
+
+-- The robber's position as the SERVER sees it, fresh off his synced ped. The
+-- drain, the stash, the dive and the arrest all measure against this rather
+-- than against anything a client sends - coords in an event are the one thing
+-- a modded client could lie about, and the scope asks for exactly this
+-- ("server-authoritative position for all detection maths").
+local function robberPos()
+    if not state.robber then return nil end
+
+    local ped = GetPlayerPed(state.robber)
+    if not ped or ped == 0 or not DoesEntityExist(ped) then return nil end
+
+    local at = GetEntityCoords(ped)
+    return { x = at.x, y = at.y, z = at.z }
+end
+
+-- ===== control, on the radio =====
+-- Police ears only, and dry on purpose. The robber never hears any of it:
+-- being told "they have lost you" would replace the pressure feeling with a
+-- fact, and the feeling is the game.
+local function epithet()
+    local list = Config.flavour.EPITHETS
+    if not list or #list == 0 then return 'the suspect' end
+
+    -- Seeded once per session: control settles on a name for him on round
+    -- one and sticks to it all evening, which is funnier than variety.
+    return list[1 + math.floor(NickSession.roll(101) * #list) % #list]
+end
+
+local function radio(list)
+    if not list or #list == 0 then return end
+
+    local line = list[math.random(#list)]:format(epithet())
+
+    for _, src in ipairs(GetPlayers()) do
+        local id = tonumber(src)
+        if id and id ~= state.robber then
+            TriggerClientEvent('nick:radio', id, line)
+        end
+    end
 end
 
 -- ===== whose turn it is =====
@@ -109,22 +153,25 @@ local function onStart()
     -- the law cannot wing each other.
     exports.core:SetTeam(robber, 'robber')
 
-    -- A fresh table, NOT setState: a key written as nil in a constructor is
-    -- simply absent, so a merge would quietly keep last round's values.
-    state = {
-        phase      = 'setup',
-        robber     = robber,
-        robberName = GetPlayerName(robber),
-        startsAt   = now + Config.round.READY_S * 1000,
-        endsAt     = now + (Config.round.READY_S + Config.round.ROUND_LENGTH_S) * 1000,
-        lastTick   = now,
-        pos        = nil,
-    }
-
     -- Seeded once per session and reused identically every round: the scope's
     -- fairness requirement is that nobody's turn gets an easier city.
     local robberSpawn = NickSession.pick(Config.locations.robberSpawns, 1, 7)[1]
     local copSpawn    = NickSession.pick(Config.locations.copSpawns, 1, 13)[1]
+
+    -- A fresh table, NOT setState: a key written as nil in a constructor is
+    -- simply absent, so a merge would quietly keep last round's values.
+    state = {
+        phase       = 'setup',
+        robber      = robber,
+        robberName  = GetPlayerName(robber),
+        startsAt    = now + Config.round.READY_S * 1000,
+        endsAt      = now + (Config.round.READY_S + Config.round.ROUND_LENGTH_S) * 1000,
+        lastTick    = now,
+        pos         = nil,
+        copSpawn    = copSpawn,
+        lastContact = 'cold',
+        radioAt     = 0,
+    }
 
     local firstCop = nil
     for _, src in ipairs(players) do
@@ -196,6 +243,10 @@ local function onTick()
         tell('He is out there. Find him.')
     end
 
+    -- His position, read by the server itself once a second. If the ped is
+    -- momentarily unreadable the merge keeps the last good fix.
+    setState({ pos = robberPos() })
+
     -- The guess moves on whether anyone is looking or not. This is the whole
     -- mode: doubling back behind a building sends the circle the wrong way.
     NickDetect.tick(dt)
@@ -213,6 +264,33 @@ local function onTick()
     status.robberName  = state.robberName
     status.publicTaken = NickHeist.publicTaken()
     status.stars       = NickHeist.stars()
+
+    -- Control's commentary, one line per change of heart and never more often
+    -- than RADIO_GAP_S. Only the changes worth a line: losing him, giving up
+    -- on him, and getting him back after genuinely losing him - a lock
+    -- regained within a few seconds is routine and control stays quiet.
+    local was = state.lastContact
+    if status.contact ~= was then
+        setState({ lastContact = status.contact })
+
+        if now >= state.radioAt then
+            local F = Config.flavour
+            local lines
+
+            if status.contact == 'soft' and was == 'hard' then
+                lines = F.RADIO_LOST
+            elseif status.contact == 'cold' and was == 'soft' then
+                lines = F.RADIO_COLD
+            elseif status.contact == 'hard' and was == 'cold' then
+                lines = F.RADIO_FOUND
+            end
+
+            if lines then
+                setState({ radioAt = now + F.RADIO_GAP_S * 1000 })
+                radio(lines)
+            end
+        end
+    end
 
     -- The number that makes a spectator sport of it. Everyone sees it, which
     -- is the point: the room knows how badly it is going before he does.
@@ -283,6 +361,33 @@ local function onEnd(reason)
     }
     tell(lines[result] or 'Round over.')
 
+    -- The retelling: the write-off, and a superlative where one was earned.
+    -- Only for rounds that actually played out - a fled or abandoned round
+    -- gets no paperwork.
+    if result == 'arrested' or result == 'called-it' or result == 'time' then
+        local F      = Config.flavour
+        local taken  = NickHeist.taken()
+        local heist  = NickHeist.review()
+        local search = NickDetect.review()
+
+        if taken > 0 and #F.STOCK_ITEMS > 0 then
+            tell(('Insurance reckon £%s of stock, mostly %s.'):format(
+                taken, F.STOCK_ITEMS[math.random(#F.STOCK_ITEMS)]))
+        end
+
+        if not search.everSeen then
+            tell(F.NEVER_SEEN_LINE)
+        elseif search.longestUnseenS >= F.GHOST_MIN_S then
+            tell((F.GHOST_LINE):format(
+                math.floor(search.longestUnseenS / 60), search.longestUnseenS % 60))
+        end
+
+        if heist.pettiest then
+            local petty = heist.pettiest.method == 'smash' and F.PETTY_SMASH_LINE or F.PETTY_QUIET_LINE
+            tell(petty:format(heist.pettiest.name, heist.pettiest.take))
+        end
+    end
+
     local leader = NickSession.leader()
     if leader then
         tell(('Session leader: %s on £%s.'):format(leader.name, leader.total))
@@ -290,30 +395,40 @@ local function onEnd(reason)
 end
 
 -- ===== what the clients tell us =====
+-- Every handler here treats its client as a witness, never as an authority:
+-- identity and phase are checked first, and any position that matters is read
+-- off the server's own copy of the peds rather than out of the event.
 
--- A copper laid eyes on him. Straight into the detector: this is the only
--- thing in the whole mode that produces the truth.
-RegisterNetEvent('nick:see', function(coords)
+-- A copper laid eyes on him. The event is just "I can see him" - the server
+-- reads the position off its OWN copy of his ped, so the one thing in the
+-- whole mode that produces the truth can never be handed a lie. The range
+-- check is the anti-cheat half: a client claiming a sighting from the other
+-- side of the map is not looking at anything.
+RegisterNetEvent('nick:see', function()
     local src = source
     if state.phase ~= 'active' or src == state.robber then return end
-    if type(coords) ~= 'table' and type(coords) ~= 'vector3' then return end
 
-    NickDetect.sighting(coords)
-end)
+    local cop    = GetPlayerPed(src)
+    local robber = state.robber and GetPlayerPed(state.robber)
+    if not cop or cop == 0 or not robber or robber == 0 then return end
+    if not DoesEntityExist(robber) then return end
 
--- The robber's own position, once a second. Used for the drain, the stash and
--- the dive - never published. The police only ever get it by looking.
-RegisterNetEvent('nick:heartbeat', function(coords)
-    local src = source
-    if src ~= state.robber then return end
-    setState({ pos = { x = coords.x, y = coords.y, z = coords.z } })
+    local at  = GetEntityCoords(robber)
+    local gap = #(GetEntityCoords(cop) - at)
+
+    -- Generous on purpose: SIGHT_AIR_RANGE is the longest legitimate look
+    -- and the client already enforces the real ground/air split. This only
+    -- has to stop the impossible.
+    if gap > Config.detection.SIGHT_AIR_RANGE * 1.3 then return end
+
+    NickDetect.sighting(at)
 end)
 
 RegisterNetEvent('nick:job', function(index, method)
     local src = source
     if state.phase ~= 'active' or src ~= state.robber then return end
 
-    local ok, why = NickHeist.startJob(tonumber(index) or 0, method, state.pos)
+    local ok, why = NickHeist.startJob(tonumber(index) or 0, method, robberPos())
     if not ok then
         TriggerClientEvent('nick:purseNote', src, why or 'not happening')
     end
@@ -323,7 +438,7 @@ RegisterNetEvent('nick:stash', function(index)
     local src = source
     if state.phase ~= 'active' or src ~= state.robber then return end
 
-    local ok, banked = NickHeist.stash(tonumber(index) or 0, state.pos)
+    local ok, banked = NickHeist.stash(tonumber(index) or 0, robberPos())
     if ok then
         TriggerClientEvent('nick:banked', src, banked)
     else
@@ -333,16 +448,34 @@ end)
 
 -- "Call it a day": stood inside a safehouse, he can stop the round himself
 -- and keep what he has banked. The nerve of leaving £4,000 in the bag to do
--- it is the joke.
+-- it is the joke. Checked here as well as on his screen, or a robber about
+-- to be cuffed could end the round from the driver's seat and rob the law of
+-- the arrest.
 RegisterNetEvent('nick:callItADay', function()
     local src = source
     if state.phase ~= 'active' or src ~= state.robber then return end
+    if not NickHeist.nearHouse(robberPos()) then return end
+
     exports.core:EndGametype('called-it')
 end)
 
+-- The client shows the prompt; the server checks the cuffs actually reach.
+-- Without this any police client could end the round - and wipe the bag -
+-- from the other side of the map. The SLACK halves of the numbers are the
+-- latency allowance, so an honest arrest never bounces.
 RegisterNetEvent('nick:arrest', function()
     local src = source
     if state.phase ~= 'active' or src == state.robber then return end
+
+    local cop    = GetPlayerPed(src)
+    local robber = state.robber and GetPlayerPed(state.robber)
+    if not cop or cop == 0 or not robber or robber == 0 then return end
+    if not DoesEntityExist(robber) then return end
+
+    if #(GetEntityCoords(cop) - GetEntityCoords(robber))
+        > Config.arrest.RANGE * Config.arrest.RANGE_SLACK then return end
+    if #GetEntityVelocity(robber)
+        > Config.arrest.MAX_SPEED * Config.arrest.SPEED_SLACK then return end
 
     TriggerEvent('core:stat', src, 'arrests', 1) -- season scoreboard
     exports.core:EndGametype('arrested')
@@ -350,12 +483,17 @@ end)
 
 -- The dive. A routing bucket is the only way a player genuinely disappears
 -- rather than merely being hard to see - the whole force can drive through
--- the doorway and never know. Granted by the server so a client cannot decide
--- to be invisible on the open road.
+-- the doorway and never know. Granted by the server, and only ever stood in
+-- a safehouse zone - checked against the server's own read of his position,
+-- so a modded client cannot decide to be invisible on the open road.
 RegisterNetEvent('nick:vanish', function(hidden)
     local src = source
     if src ~= state.robber then return end
-    if state.phase ~= 'active' and hidden then return end
+
+    if hidden then
+        if state.phase ~= 'active' then return end
+        if not NickHeist.nearHouse(robberPos()) then return end
+    end
 
     SetPlayerRoutingBucket(src, hidden and Config.safehouses.HIDDEN_BUCKET or 0)
 end)
@@ -423,6 +561,32 @@ local function register()
             OnStart = onStart,
             OnTick  = onTick,
             OnEnd   = onEnd,
+
+            -- Late to the shift: the framework has already dealt them onto
+            -- 'police'; this hands them the muster point, the shop map and -
+            -- once the fade and the model swap have finished - the kit. No
+            -- cruiser is held back for them, which is what the relief car
+            -- thread is for.
+            OnPlayerJoin = function(src)
+                if state.phase == 'idle' then return end
+
+                TriggerClientEvent('nick:role', src, {
+                    isRobber   = false,
+                    robberId   = state.robber,
+                    robberName = state.robberName,
+                    spawn      = state.copSpawn,
+                    spawnFleet = false,
+                })
+                TriggerClientEvent('nick:map', src, { sites = NickHeist.map().sites })
+
+                CreateThread(function()
+                    Wait(4000) -- the fade, the teleport and the model swap first
+                    if state.phase == 'active' and GetPlayerName(src) then
+                        TriggerClientEvent('nick:go', src)
+                    end
+                end)
+            end,
+
             OnPlayerLeave = function(src)
                 if state.phase ~= 'idle' and src == state.robber then
                     exports.core:EndGametype('fled')

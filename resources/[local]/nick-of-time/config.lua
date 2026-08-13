@@ -27,6 +27,12 @@ Config = {
         -- scope's fairness requirement is that nobody gets an easier city.
         CLOCK       = { hour = 19, minute = 40, weather = 'CLEAR', freeze = true },
         MIN_PLAYERS = 2, -- one robber, one copper. Anything less is a walk.
+
+        -- (+) How long a session (seed, scoreboard, rota) survives on disk.
+        -- Long enough that PUSH LIVE mid-evening never wipes a match; short
+        -- enough that next Thursday starts fresh instead of replaying last
+        -- week's seed against last week's scoreboard.
+        SESSION_MAX_AGE_H = 18,
     },
 
     -- ===== detection: hard lock / drifting soft track / cold =====
@@ -95,6 +101,17 @@ Config = {
         -- without this the allowance evaporates at the first busy junction.
         MIN_RAM_DAMAGE   = 15.0,
         STUTTER_EVERY_MS = 1800, -- gap between coughs, or it is simply undriveable
+
+        -- (+) What she says while she dies, in order, looping. The car's
+        -- decline getting its own commentary is half the reason anyone tells
+        -- the story afterwards.
+        COUGH_LINES = {
+            'She is coughing.',
+            'That is not a good noise.',
+            'Talk to her. Encourage her.',
+            'She is doing her best.',
+            'Third gear is a memory now.',
+        },
     },
 
     -- ===== looting =====
@@ -177,6 +194,13 @@ Config = {
     arrest = {
         RANGE     = 3.0,
         MAX_SPEED = 2.5,
+
+        -- (+) Server-side slack on the same two numbers. The client shows
+        -- the prompt; the server checks the cuffs actually reach - these are
+        -- the latency allowance so an honest arrest never bounces, while an
+        -- arrest pressed from the other side of the map still does.
+        RANGE_SLACK = 3.0,
+        SPEED_SLACK = 2.0,
     },
 
     -- ===== non-lethal by law =====
@@ -194,18 +218,26 @@ Config = {
             everyMs = 6000, -- can't be chain-stunned into a permanent nap
             downMs  = 4500, -- the window to actually cuff him
         },
+
+        -- (+) The floor above is enforced per frame, and a petrol tank going
+        -- up or a long swim can take him from fine to dead inside one - and a
+        -- dead robber with no respawn is ten minutes of everyone watching a
+        -- corpse. So he gets up where he fell (the bag lives on the server,
+        -- it survives with him), and the delay is the law's window to walk
+        -- over and nick the body first.
+        DIED_RESPAWN_S = 8,
     },
 
     -- ===== who spawns with what =====
     -- Models only for the cars: the fleet is laid out along the nearest ROAD
     -- at spawn time, because hand-typed coordinates park cars inside the
     -- building. Kits are core's (core/shared/loadouts.lua) - the mode only
-    -- names one. The taser the scope asks for wants a new core loadout entry,
-    -- so night one issues the standard cop kit and the foot chase ends with a
-    -- nightstick or a knockdown.
+    -- names one. 'taser' is the cop kit plus the stun gun, because the scope
+    -- is explicit that the foot chase ends with a taser, not a shootout.
     kit = {
-        POLICE_LOADOUT = 'cop',
+        POLICE_LOADOUT = 'taser',
         POLICE_AMMO    = 250,
+        TASER_WEAPON   = 'WEAPON_STUNGUN', -- what the robber's knockdown listens for
     },
 
     models = {
@@ -232,6 +264,55 @@ Config = {
     },
 
     hud = { x = 0.5, y = 0.055, scale = 0.55 },
+
+    -- ===== the retelling =====
+    -- (+) None of this affects play. It is the material the room quotes back
+    -- at each other at the bar afterwards, which for this crowd is the score
+    -- that actually matters. Every line and list lives here.
+    flavour = {
+        -- What control calls the suspect over the radio, drawn once from the
+        -- session seed and then used all evening. The consistency is the
+        -- joke: by round three everyone is calling him it too.
+        EPITHETS = {
+            'the gentleman', 'our friend', 'chummy',
+            'the entrepreneur', 'his nibs', 'matey boy',
+        },
+
+        -- Control's running commentary as the picture changes. %s is the
+        -- epithet. Police ears only - the robber is never told the map has
+        -- gone quiet, that is what the pressure feeling is for.
+        RADIO_GAP_S = 15, -- control does not gabble
+        RADIO_LOST = { -- eyes lost: the circle has started drifting
+            'lost visual on %s. Last seen heading... somewhere.',
+            'visual gone. The dot on your map is now an opinion.',
+            'units describe %s as "there a second ago". Noted and logged.',
+            'no eyes. He is officially a rumour with a postcode.',
+        },
+        RADIO_COLD = { -- the circle got so big it stopped being information
+            'search area now covers most of the city. Calling it: we have lost %s.',
+            'circle abandoned. Resume educated guessing.',
+            '%s could be anywhere. He is definitely somewhere. That is all we have.',
+            'trail is cold. Tea break at your own discretion, not mine.',
+        },
+        RADIO_FOUND = { -- back in contact after going fully cold
+            'EYES ON %s. All units - and try to keep them this time.',
+            'that is him. That is actually him. Go, go.',
+            'contact re-established. Nobody put the last five minutes in the report.',
+        },
+
+        -- The end-of-round paperwork: the take read out like an insurance
+        -- write-off, and a superlative where one has been earned.
+        STOCK_ITEMS = {
+            'crisps', 'scratch cards', 'energy drinks',
+            'lottery pens', 'phone chargers', 'novelty lighters',
+        },
+        PITIFUL_JOB_GBP  = 150, -- a completed job under this is a superlative
+        GHOST_MIN_S      = 120, -- unseen this long in one stretch earns the ghost line
+        NEVER_SEEN_LINE  = 'Not one confirmed sighting all round. The force would like a word with the force.',
+        GHOST_LINE       = 'He was unaccounted for %d:%02d of it. Nobody is getting a commendation.',
+        PETTY_SMASH_LINE = 'At some point he put a window through at %s for £%s. Magnificent.',
+        PETTY_QUIET_LINE = 'He also tiptoed into %s and left with £%s. Worth it.',
+    },
 
     -- ===== the map =====
     -- NOTHING IS TAGGED YET. Every one of these lists is empty on purpose:

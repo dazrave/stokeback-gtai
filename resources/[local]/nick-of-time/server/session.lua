@@ -17,6 +17,13 @@ local function load()
     local ok, decoded = pcall(json.decode, raw)
     if not ok or type(decoded) ~= 'table' then return nil end
 
+    -- A session is one evening. A file that has outlived the age cap is LAST
+    -- week's match - replaying its seed against its scoreboard would make
+    -- tonight's rounds a contest with ghosts - so it is quietly retired and
+    -- a fresh session starts.
+    local age = os.time() - (decoded.startedAt or 0)
+    if age > (Config.round.SESSION_MAX_AGE_H or 18) * 3600 then return nil end
+
     return decoded
 end
 
@@ -27,7 +34,12 @@ end
 -- Read once on the way up, then kept in memory. `scores` is by NAME, not by
 -- server id: ids are handed out fresh on every reconnect and would lose a
 -- player their whole evening the moment their game crashed.
-local session = load() or { seed = math.random(1, 2147483000), scores = {}, lastRobber = nil }
+local session = load() or {
+    seed       = math.random(1, 2147483000),
+    scores     = {},
+    lastRobber = nil,
+    startedAt  = os.time(),
+}
 if type(session.scores) ~= 'table' then session.scores = {} end
 
 -- ===== fairness: one seed for the whole session =====
@@ -91,7 +103,8 @@ function NickSession.record(name, stashed)
     for player, total in pairs(session.scores) do scores[player] = total end
     scores[name] = (scores[name] or 0) + math.floor(stashed or 0)
 
-    session = { seed = session.seed, scores = scores, lastRobber = session.lastRobber }
+    session = { seed = session.seed, scores = scores,
+                lastRobber = session.lastRobber, startedAt = session.startedAt }
     save(session)
 end
 
@@ -115,7 +128,8 @@ end
 -- Kept on disk with the scores for the same reason: a restart mid-match must
 -- not hand the same player two goes.
 function NickSession.rememberRobber(name)
-    session = { seed = session.seed, scores = session.scores, lastRobber = name }
+    session = { seed = session.seed, scores = session.scores,
+                lastRobber = name, startedAt = session.startedAt }
     save(session)
 end
 
