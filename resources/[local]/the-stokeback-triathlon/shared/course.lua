@@ -119,7 +119,11 @@ function TriCourse.build(name)
                 kind    = 'transition',
                 opens   = leg,
                 coords  = transition,
-                radius  = prevCfg.TRANSITION_RADIUS or legCfg.TRANSITION_RADIUS or prevCfg.RADIUS,
+                -- The OPENING leg's knob first: TRANSITION_RADIUS is written
+                -- in config as "arriving at the bikes/planes", i.e. it belongs
+                -- to the leg whose vehicles are parked there. Previous-first
+                -- made air's 8.0 unreachable behind moto's 6.0.
+                radius  = legCfg.TRANSITION_RADIUS or prevCfg.TRANSITION_RADIUS or prevCfg.RADIUS,
                 require = 'none',
                 label   = legCfg.TRANSITION_LABEL or 'the transition',
                 colour  = legCfg.BLIP_COLOUR,

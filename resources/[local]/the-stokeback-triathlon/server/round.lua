@@ -12,7 +12,20 @@ local state = {
     endsAt       = 0,      -- the main time limit
     runoutEndsAt = 0,      -- the post-winner window
     winner       = nil,
+    armed        = false,  -- the REAL countdown is running (placement is done)
+    token        = nil,    -- this race's identity, so a stale start thread
+                           -- from a stopped race cannot arm the next one
+    nagAt        = 0,      -- next time the steward may have opinions about last place
 }
+
+-- Which discipline comes where, for the straggler maths.
+local LEG_INDEX = {}
+for index, leg in ipairs(Config.LEG_ORDER) do LEG_INDEX[leg] = index end
+
+local function mmss(ms)
+    local seconds = math.floor((ms or 0) / 1000)
+    return ('%d:%02d'):format(math.floor(seconds / 60), seconds % 60)
+end
 
 local function setState(next)
     local merged = {}
@@ -85,7 +98,8 @@ local function onStart()
 
     TriRace.begin(built, players)
 
-    local now = GetGameTimer()
+    local now   = GetGameTimer()
+    local token = {} -- unique per race: a table only ever equals itself
 
     -- A fresh table, NOT setState: a key written as nil in a constructor is
     -- simply absent, so a merge would quietly keep last race's winner - and
@@ -103,6 +117,9 @@ local function onStart()
         endsAt       = now + 120000 + Config.round.ROUND_LENGTH_S * 1000,
         runoutEndsAt = 0,
         winner       = nil,
+        armed        = false,
+        token        = token,
+        nagAt        = 0,
     }
 
     CreateThread(function()
@@ -128,9 +145,14 @@ local function onStart()
         -- screen is the whole countdown rather than whatever was left of it.
         Wait(Config.round.READY_S * 1000)
 
-        if state.phase == 'countdown' then
+        -- The token check matters: this thread slept through six-odd seconds
+        -- in which the race could have been stopped AND a new one started,
+        -- and arming somebody else's countdown early would start their race
+        -- while its racers were still being placed.
+        if state.phase == 'countdown' and state.token == token then
             local from = GetGameTimer()
             setState({
+                armed  = true,
                 goesAt = from + Config.round.COUNTDOWN_S * 1000,
                 endsAt = from + (Config.round.COUNTDOWN_S + Config.round.ROUND_LENGTH_S) * 1000,
             })
@@ -147,8 +169,9 @@ local function onTick()
 
     local now = GetGameTimer()
 
-    if state.phase == 'countdown' and now >= state.goesAt then
+    if state.phase == 'countdown' and state.armed and now >= state.goesAt then
         setState({ phase = 'racing' })
+        TriRace.markStart() -- times and splits measured from GO, not from setup
         TriggerClientEvent('tri:go', -1)
         tell(Config.flavour.GO_LINE)
     end
@@ -158,12 +181,45 @@ local function onTick()
 
     status.phase     = state.phase
     status.remaining = remaining
-    status.countdown = math.max(0, math.ceil((state.goesAt - now) / 1000))
+    -- nil until the real countdown is armed: the provisional two-minute
+    -- placeholder on screen read as a broken race. The HUD shows the
+    -- steward's hold line instead.
+    status.countdown = state.armed
+        and math.max(0, math.ceil((state.goesAt - now) / 1000)) or nil
     status.winner    = state.winner
     status.runout    = state.phase == 'runout'
         and math.max(0, math.ceil((state.runoutEndsAt - now) / 1000)) or nil
 
     TriggerClientEvent('tri:status', -1, status)
+
+    -- The steward's opinions about last place (flavour.STRAGGLER): once the
+    -- race has been on a while and the back marker is a whole discipline or
+    -- more behind the front, they get a mention. Racing only - the runout
+    -- window is already its own kind of pressure.
+    local S = Config.flavour.STRAGGLER
+    if S and state.phase == 'racing'
+        and (now - state.goesAt) >= (S.AFTER_S or 240) * 1000
+        and now >= state.nagAt then
+
+        local standings = TriRace.standings()
+        local leader, last = standings[1], standings[#standings]
+
+        local behind = (leader and last and leader ~= last
+            and not last.finished and not last.dnf)
+            and (LEG_INDEX[leader.leg] or 1) - (LEG_INDEX[last.leg] or 1) or 0
+
+        if behind >= (S.LEGS_BEHIND or 1) then
+            setState({ nagAt = now + (S.EVERY_S or 90) * 1000 })
+
+            local legCfg = Config.legs[last.leg] or {}
+            tell((pick(S.LINES) or '%s is still on the %s leg.'):format(
+                last.name,
+                (legCfg.LABEL or last.leg):lower(),
+                math.floor((now - state.goesAt) / 60000)))
+        else
+            setState({ nagAt = now + 10000 }) -- close race; look again shortly
+        end
+    end
 
     -- The finish window: it shuts on the clock, or early if there is simply
     -- nobody left out on the course.
@@ -186,9 +242,8 @@ end
 local function readOutStandings(standings, timeUp)
     for index, entry in ipairs(standings) do
         if entry.finished then
-            local seconds = math.floor((entry.time or 0) / 1000)
-            tell(('  %d. %s - %d:%02d'):format(
-                entry.place or index, entry.name, math.floor(seconds / 60), seconds % 60))
+            tell(('  %d. %s - %s'):format(
+                entry.place or index, entry.name, mmss(entry.time)))
         elseif timeUp then
             tell(('  %d. %s - still on %s when it stopped'):format(
                 index, entry.name, TriCourse.describe(entry.waypoint)))
@@ -219,10 +274,12 @@ local function onEnd(reason)
 
     -- Torn down by force (this resource or core going down): no drama, just
     -- make sure the next registration starts from idle and no client is left
-    -- holding a bike it spawned.
+    -- holding a bike it spawned. The ledger sweep runs inline and immediately
+    -- - there may be no client left alive to do it kindly.
     if reason == 'resource-stopped' or reason == 'core-stopped' then
         TriggerClientEvent('tri:end', -1, result, nil)
         TriRace.clear()
+        TriRace.binAll()
         return
     end
 
@@ -251,8 +308,29 @@ local function onEnd(reason)
         tell(line:format(name, name))
     end
 
+    -- The discipline awards (flavour.AWARDS): fastest split per leg, read out
+    -- only for rounds that actually raced - an abandoned race gets no medals.
+    if result == 'finished' or timeUp then
+        local fastest = TriRace.fastest()
+        for _, leg in ipairs(Config.LEG_ORDER) do
+            local best = fastest[leg]
+            local line = best and Config.flavour.AWARDS and Config.flavour.AWARDS[leg]
+            if line then tell(line:format(best.name, mmss(best.ms))) end
+        end
+    end
+
     TriggerClientEvent('tri:end', -1, result, state.winner, standings)
     TriRace.clear()
+
+    -- The ledger sweep, a beat later: the clients get first go, so the gentle
+    -- fade can put a still-flying pilot down kindly before their aeroplane
+    -- stops existing. Whatever a leaver or a borrowed bike left behind, the
+    -- server bins itself - unless a new race has already begun, in which case
+    -- its begin() has swept the ledger and these are ITS vehicles now.
+    CreateThread(function()
+        Wait(4000)
+        if not TriRace.course() then TriRace.binAll() end
+    end)
 end
 
 -- ===== what the clients tell us =====
@@ -305,6 +383,20 @@ RegisterNetEvent('tri:reached', function(index)
                 or Config.flavour.FINISH_DEFAULT:format(racer.name, place .. 'th'))
         end
 
+        -- The photo finish (flavour.PHOTO): close enough behind the previous
+        -- finisher and it gets the full ceremony - which includes second
+        -- pipping first, the classic.
+        local P = Config.flavour.PHOTO
+        if P and racer.gapMs and racer.gapTo
+            and racer.gapMs <= (P.MARGIN_S or 1.0) * 1000 then
+
+            local gap = racer.gapMs / 1000.0
+            TriggerClientEvent('tri:photo', -1, racer.gapTo, racer.name, gap)
+
+            local line = pick(P.LINES)
+            if line then tell(line:format(racer.gapTo, racer.name, gap)) end
+        end
+
         return
     end
 
@@ -333,6 +425,15 @@ RegisterNetEvent('tri:reached', function(index)
         if line then
             note(src, line:format(math.floor((legCfg.TARGET_S or 300) / 60)))
         end
+
+        -- The split, read out (flavour.SPLITS): claiming a transition is what
+        -- closes the discipline behind it, so this is the moment the time
+        -- means something.
+        local S = Config.flavour.SPLITS
+        local split = racer.splits and racer.splits[waypoint.leg]
+        if S and S.ANNOUNCE and split and S.LINES[waypoint.leg] then
+            tell(S.LINES[waypoint.leg]:format(racer.name, mmss(split)))
+        end
     end
 end)
 
@@ -350,8 +451,26 @@ RegisterNetEvent('tri:needVehicle', function()
 
     local racer = TriRace.get(src)
     if racer then
-        tell((pick(Config.flavour.WROTE_OFF) or '%s needs another one.'):format(racer.name))
+        -- The steward keeps count (flavour.WROTE_OFF_MANY): from the Nth
+        -- replacement, the polite lines give way to the ones with a number in.
+        local M = Config.flavour.WROTE_OFF_MANY
+        if M and racer.wrecks >= (M.AFTER or 3) then
+            tell((pick(M.LINES) or '%s. Number %d.'):format(racer.name, racer.wrecks + 1))
+        else
+            tell((pick(Config.flavour.WROTE_OFF) or '%s needs another one.'):format(racer.name))
+        end
     end
+end)
+
+-- The client reports what it spawned, by network id, so the server's own
+-- ledger (race.lua) can sweep vehicles no client sweep will ever reach - a
+-- disconnect mid-leg, a bike a mate borrowed and now owns. The report is
+-- validated there: right model, and the reporter must own the entity.
+RegisterNetEvent('tri:spawned', function(netId)
+    local src = source
+    if state.phase ~= 'racing' and state.phase ~= 'runout' then return end
+
+    TriRace.registerVehicle(src, tonumber(netId))
 end)
 
 exports('getState', function()
@@ -370,6 +489,7 @@ local function register()
     if state.phase ~= 'idle' then
         setState({ phase = 'idle' })
         TriRace.clear()
+        TriRace.binAll()
         TriggerClientEvent('tri:end', -1, 'abandoned', nil)
         tell('Core rebooted mid-race - race abandoned. /tri start to go again.')
     end
@@ -447,17 +567,35 @@ local function register()
             OnPlayerLeave = function(src)
                 if state.phase == 'idle' then return end
 
+                -- Their vehicle outlives their connection otherwise: the
+                -- entity migrates to whichever machine is nearest, and no
+                -- client sweep will ever claim it.
+                TriRace.binVehicles(src)
                 TriRace.drop(src)
 
                 -- Everyone who was still out there has gone home: there is
-                -- nothing left to wait for.
-                if TriRace.stillRacing() == 0 and state.phase == 'runout' then
-                    exports.core:EndGametype('finished')
+                -- nothing left to wait for. During the runout that is a
+                -- finished race; before it, a race with nobody in it is just
+                -- weather, and twenty minutes of it helps no one.
+                if TriRace.stillRacing() == 0 then
+                    if state.phase == 'runout' then
+                        exports.core:EndGametype('finished')
+                    else
+                        exports.core:EndGametype('stopped')
+                    end
                 end
             end,
         },
     })
 end
+
+-- Belt and braces alongside the core-driven onEnd: nothing this mode's
+-- clients spawned outlives this mode, whatever order things fall over in.
+-- Same dual-cleanup shape as nick.
+AddEventHandler('onResourceStop', function(resource)
+    if resource ~= GetCurrentResourceName() then return end
+    TriRace.binAll()
+end)
 
 AddEventHandler('onResourceStart', function(resource)
     if resource == GetCurrentResourceName() or resource == 'core' then

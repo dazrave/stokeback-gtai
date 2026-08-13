@@ -144,7 +144,7 @@ RegisterNetEvent('tri:winner', function(name, seconds)
     end
 end)
 
-RegisterNetEvent('tri:end', function(result, winner)
+RegisterNetEvent('tri:end', function(result, winner, standings)
     -- A fresh table, NOT setState: a key written as nil in a constructor is
     -- simply absent from a merge, so `course = nil` would have left every loop
     -- in this resource still believing there was a race on - drawing markers
@@ -162,6 +162,20 @@ RegisterNetEvent('tri:end', function(result, winner)
 
     local shard = shards[result] or shards.abandoned
     TriHUD.shard(shard[1], shard[2])
+
+    -- The ceremony (hud.lua): gold, silver, bronze and a sponsor, once the
+    -- shard above has had its moment.
+    if TriPodium then TriPodium.show(standings) end
+end)
+
+-- The camera says what the eye could not. Everyone gets the card - a photo
+-- finish with no audience is just two aeroplanes.
+RegisterNetEvent('tri:photo', function(first, second, gap)
+    if not state.inRace then return end
+
+    local P = Config.flavour.PHOTO or {}
+    TriHUD.shard(P.SHARD or 'PHOTO FINISH',
+        ('%s pips %s by %.2f seconds.'):format(first or '?', second or '?', gap or 0))
 end)
 
 -- ===== putting people back on the course =====
@@ -227,7 +241,9 @@ CreateThread(function()
     while true do
         Wait(500)
 
-        if state.inRace and (state.phase == 'racing' or state.phase == 'runout') then
+        if state.inRace and (state.phase == 'racing' or state.phase == 'runout'
+            or state.phase == 'countdown') then
+
             local ped  = PlayerPedId()
             local dead = IsEntityDead(ped) or IsPedFatallyInjured(ped)
 
@@ -235,7 +251,23 @@ CreateThread(function()
                 wasDead = true
             elseif wasDead then
                 wasDead = false
-                TriBackToCheckpoint()
+
+                if state.phase == 'countdown' then
+                    -- Run over ON THE LINE - population 'alive' means the
+                    -- number 19 bus is a real hazard. core's respawn stood
+                    -- them up as a brand new, unfrozen ped wherever they
+                    -- fell: back on their peg and frozen again, or a death
+                    -- at 'three' is a head start at 'go'.
+                    if state.course and state.course.start then
+                        placeOnLine(state.course.start, state.slot, state.field)
+                        -- Re-checked AFTER placing: placeOnLine waits on
+                        -- collision, and GO may have come and gone meanwhile
+                        -- - a freeze then would hold them past the whistle.
+                        FreezeEntityPosition(PlayerPedId(), state.phase == 'countdown')
+                    end
+                else
+                    TriBackToCheckpoint()
+                end
             end
         else
             wasDead = false
@@ -243,9 +275,19 @@ CreateThread(function()
     end
 end)
 
--- "My bike is in a lake." Held rather than tapped, so nobody bins a good run
--- by leaning on G at a jump. The server decides whether it is granted.
+-- "My bike is in a lake." Genuinely held, not tapped - a tap teleports you
+-- back a checkpoint, and G sits next to too many keys people lean on
+-- mid-jump. The hold length is a config knob; the server still decides
+-- whether a replacement is actually granted.
+local function hint(text)
+    BeginTextCommandDisplayHelp('STRING')
+    AddTextComponentSubstringPlayerName(text)
+    EndTextCommandDisplayHelp(0, false, false, -1)
+end
+
 CreateThread(function()
+    local heldAt = nil
+
     while true do
         Wait(0)
 
@@ -255,10 +297,20 @@ CreateThread(function()
             and (state.phase == 'racing' or state.phase == 'runout')
             and not (state.me and state.me.finished) then
 
-            if IsControlJustReleased(0, Config.controls.RECOVER) then
-                TriBackToCheckpoint()
+            if IsControlPressed(0, Config.controls.RECOVER) then
+                heldAt = heldAt or GetGameTimer()
+
+                if GetGameTimer() - heldAt >= (Config.controls.RECOVER_HOLD_S or 1.0) * 1000 then
+                    heldAt = nil
+                    TriBackToCheckpoint()
+                else
+                    hint('Keep holding to write this one off and take a replacement.')
+                end
+            else
+                heldAt = nil
             end
         else
+            heldAt = nil
             Wait(400)
         end
     end

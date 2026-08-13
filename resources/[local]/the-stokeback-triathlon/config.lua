@@ -148,7 +148,9 @@ Config = {
     },
 
     controls = {
-        RECOVER = 47, -- INPUT_DETONATE (G): "my bike is in a lake, send another"
+        RECOVER        = 47,  -- INPUT_DETONATE (G): "my bike is in a lake, send another"
+        RECOVER_HOLD_S = 1.0, -- (+) held this long before it fires: a tap of G
+                              -- mid-jump must never teleport anybody backwards
     },
 
     hud = {
@@ -174,6 +176,11 @@ Config = {
             'No weapons. This is a sporting event, and the insurance was very specific.',
         },
         GO_LINE      = 'GO. Try to look like athletes.',
+
+        -- (+) Shown while everyone is being placed and the real countdown has
+        -- not been armed yet - without it the HUD briefly counted down from
+        -- the provisional two minute placeholder, which read as a broken race.
+        READY_LINE   = 'Hold. The steward is finding his whistle.',
         LEG_LINES    = { -- said to one racer as they start a leg. %d is the target, in minutes
             run  = 'On foot. About %d minutes if you are any good, which nobody here is.',
             moto = 'On the bike. Off-road, over the top, and please stop using the road.',
@@ -199,6 +206,111 @@ Config = {
             'Replacement dispatched to %s. The mechanic has stopped making eye contact.',
             '%s requires another one. The paperwork is becoming a second event.',
         },
+
+        -- (+) Once somebody is properly getting through them, the steward
+        -- stops pretending it is routine. %s name, %d which vehicle they are
+        -- now on (the original counts as number one).
+        WROTE_OFF_MANY = {
+            AFTER = 3, -- from this many REPLACEMENTS, the lines below take over
+            LINES = {
+                '%s is on vehicle number %d. This is now a scrappage scheme with a finish line.',
+                '%s has reached vehicle number %d. The insurers have stopped answering the phone.',
+                '%s again. Number %d. The mechanic has asked to be reassigned to the running leg.',
+            },
+        },
+
+        -- (+) The in-the-ring-in-the-wrong-thing help text, escalating: the
+        -- longer you stand there, the less polite it gets. One list per
+        -- offence, read top to bottom, sticking on the last line. %s is the
+        -- required vehicle's model name where a line wants it.
+        HECKLES = {
+            EVERY_S = 3, -- seconds between nags (and between escalations)
+            FOOT = {
+                'This leg is on foot. Get out and run.',
+                'Still in the vehicle. The judges have noticed.',
+                'OUT. It is a RUNNING race. The clue is in the name.',
+            },
+            NEED_VEHICLE = {
+                'Not on foot - you want the %s.',
+                'The %s. The vehicle-shaped thing. Get on it.',
+                'You cannot jog this leg. The %s exists for a reason.',
+            },
+            WRONG_VEHICLE = {
+                'Wrong vehicle. It has to be the %s.',
+                'That is still not a %s.',
+                'The %s. The %s! It has your number painted on it and everything.',
+            },
+        },
+
+        -- (+) A photo finish: anybody crossing within the margin of the
+        -- finisher before them gets the full ceremony. Lines take (the one in
+        -- front, the one behind, the gap in seconds).
+        PHOTO = {
+            MARGIN_S = 1.0,
+            SHARD    = 'PHOTO FINISH',
+            LINES    = {
+                'Photo finish: %s edges %s by %.2f seconds. The photo is from a disposable camera.',
+                'Photo finish: %s over %s by %.2f seconds. The stewards reviewed it in the pub.',
+            },
+        },
+
+        -- (+) Split times, said out loud as each racer closes a discipline.
+        -- %s name, %s the split as m:ss. The air split is the finish itself,
+        -- so it has no line here.
+        SPLITS = {
+            ANNOUNCE = true,
+            LINES = {
+                run  = '%s off the run in %s. Now the motorbike bit.',
+                moto = '%s through the dirt in %s. Now the sky, God help us.',
+            },
+        },
+
+        -- (+) End-of-race discipline awards: fastest split per leg.
+        -- %s name, %s the time.
+        AWARDS = {
+            run  = 'Fastest runner: %s, %s. A genuine athlete, regrettably.',
+            moto = 'Fastest rider: %s, %s. The hills are pressing charges.',
+            air  = 'Fastest pilot: %s, %s - three words nobody wanted to hear.',
+        },
+
+        -- (+) The steward's developing opinions about last place. Fires only
+        -- once the race has been on a while AND the back marker is at least a
+        -- whole discipline behind the front. Lines take (%s name, %s leg
+        -- label lowercased, %d minutes since GO); use whichever they like.
+        STRAGGLER = {
+            AFTER_S     = 240, -- quiet for the first four minutes; everyone is trying
+            EVERY_S     = 90,  -- then at most one remark per this
+            LEGS_BEHIND = 1,   -- disciplines between front and back before it starts
+            LINES = {
+                '%s is still on the %s leg. The next vehicle has started to worry.',
+                'Race control confirms %s remains on the %s leg, %d minutes in.',
+                '%s: still the %s leg. The steward has sent out for a sandwich.',
+            },
+        },
+
+        -- (+) The podium: gold, silver, bronze and a sponsor nobody has heard
+        -- of, drawn on screen after the end card so it can be screenshotted
+        -- rather than scrolling away in chat.
+        PODIUM = {
+            DELAY_S      = 6.5, -- let the end shard have its moment first
+            SECONDS      = 12,
+            TITLE        = 'THE STOKEBACK PODIUM',
+            MEDALS       = {
+                { label = 'GOLD',   tint = '~y~' },
+                { label = 'SILVER', tint = '~w~' },
+                { label = 'BRONZE', tint = '~o~' },
+            },
+            SPONSOR_LINE = 'Brought to you by %s.',
+            SPONSORS = {
+                'The Crown, Stoke (function room available)',
+                "Barry's Bargain Aviation - no refunds",
+                'Sanchez Parts & Salvage, incorporating Sanchez Parts',
+                'The Fund for Distressed Biplanes',
+                "Big Trev's Discount Helmets (probably fine)",
+                'the concept of a triathlon, loosely',
+            },
+        },
+
         NOBODY_FINISHED = 'Twenty minutes and not one of you crossed the line. Standings by how far you got, then.',
         TIME_LINE       = 'Time. Pencils down.',
     },

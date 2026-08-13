@@ -14,16 +14,20 @@ local memo = {
     asks    = 0,   -- outstanding "send me another" requests
 }
 
--- Which way from here to there, in GTA's heading degrees. Used to point a
--- replacement at the next checkpoint rather than at whatever the wreck was
--- facing when it stopped being a vehicle.
+-- Which way from here to there, in GTA's heading degrees - anticlockwise
+-- from north, so a direction vector (dx, dy) is atan2(-dx, dy). Used to point
+-- a replacement at the next checkpoint rather than at whatever the wreck was
+-- facing when it stopped being a vehicle. (The first cut had the arguments
+-- as atan2(dx, -dy), which is this exactly 180 degrees out: every replacement
+-- faced AWAY from the course, and an air respawn launched its pilot at
+-- 55 m/s directly away from the next gate.)
 local function headingTo(from, to)
     if not from or not to then return nil end
 
     local dx, dy = to.x - from.x, to.y - from.y
     if (dx * dx + dy * dy) < 1.0 then return nil end
 
-    return math.deg(math.atan(dx, -dy)) % 360.0
+    return math.deg(math.atan(-dx, dy)) % 360.0
 end
 
 -- Puts a vehicle down flat on the ground. Creating one at a tagged height
@@ -31,11 +35,22 @@ end
 local function placeOnGround(hash, x, y, z, heading)
     RequestCollisionAtCoord(x, y, z)
 
+    -- The probe takes the FIRST surface going down, which next to a building
+    -- is its roof. The tag was made by somebody stood on the actual ground,
+    -- so an answer well above it is the wrong one - same sanity check as
+    -- SBM.settleToGround.
     local found, groundZ = GetGroundZFor_3dCoord(x, y, z + 25.0, false)
+    if found and groundZ > z + 6.0 then found = false end
+
     local at = found and (groundZ + 1.0) or z
 
     local vehicle = CreateVehicle(hash, x, y, at, heading or 0.0, true, true)
     if not DoesEntityExist(vehicle) then return nil end
+
+    -- A transition line-up is spawned as the racer clears the checkpoint
+    -- BEFORE it - possibly several hundred metres of unstreamed map away.
+    -- Without this an unstreamed spawn can settle straight through the world.
+    SetEntityLoadCollisionFlag(vehicle, true)
 
     SetEntityRotation(vehicle, 0.0, 0.0, heading or 0.0, 2, true)
     SetVehicleOnGroundProperly(vehicle)
@@ -43,6 +58,24 @@ local function placeOnGround(hash, x, y, z, heading)
     SetVehicleOnGroundProperly(vehicle)
 
     return vehicle
+end
+
+-- One bay per racer, abreast from the transition tag off to its right, planes
+-- further apart than bikes. Shared by the fresh line-up and by a recovery
+-- that happens AT the line-up - a recovery spawned "2 metres from the tag"
+-- is a recovery spawned inside whoever's vehicle is still parked in bay one.
+local function placeAtBay(hash, grant, base)
+    local spacing = grant.leg == 'air'
+        and (Config.vehicles.AIR_SPACING or 22.0)
+        or  (Config.vehicles.SLOT_SPACING or 6.0)
+
+    local rad  = math.rad(base.h or 0.0)
+    local from = ((grant.slot or 1) - 1) * spacing
+
+    return placeOnGround(hash,
+        base.x + math.cos(rad) * from,
+        base.y + math.sin(rad) * from,
+        base.z, base.h or 0.0)
 end
 
 -- A plane, already flying. A pilot who has been through a gate and then into a
@@ -125,12 +158,15 @@ function TriGarage.sweep(gentle)
     kit.sweep()
 end
 
--- Ask the server for one. Sent immediately and then chased twice, because the
--- server's anti-spam cooldown can legitimately refuse the first ask (two
--- crashes in quick succession) and a racer stood next to no bike at all is the
--- one thing this mode must never leave anybody doing.
+-- Ask the server for one. Sent immediately and then chased on a 2.5s beat
+-- until the asks run out, because the server's anti-spam cooldown can
+-- legitimately refuse the first ask (two crashes in quick succession) and a
+-- racer stood next to no bike at all is the one thing this mode must never
+-- leave anybody doing. Enough asks to definitely outlast the cooldown: a
+-- fixed two, with an 8s cooldown, all landed inside the refusal window and
+-- left exactly that racer exactly there.
 function TriGarage.request()
-    memo.asks = 2
+    memo.asks = math.ceil((Config.vehicles.RECOVER_COOLDOWN_S or 8) / 2.5) + 1
     TriggerServerEvent('tri:needVehicle')
 end
 
@@ -177,20 +213,7 @@ RegisterNetEvent('tri:garage', function(grant)
         -- heading: they arrive on foot and get on. Nobody is teleported into
         -- anything - that is the whole point of a transition.
         local base = transitionFor(grant.leg)
-
-        if base then
-            local spacing = grant.leg == 'air'
-                and (Config.vehicles.AIR_SPACING or 22.0)
-                or  (Config.vehicles.SLOT_SPACING or 6.0)
-
-            local rad = math.rad(base.h or 0.0)
-            local from = ((grant.slot or 1) - 1) * spacing
-
-            vehicle = placeOnGround(hash,
-                base.x + math.cos(rad) * from,
-                base.y + math.sin(rad) * from,
-                base.z, base.h or 0.0)
-        end
+        if base then vehicle = placeAtBay(hash, grant, base) end
 
         if vehicle then
             TriHUD.notify(('~g~Yours is the %s with the engine still warm.'):format(grant.model))
@@ -203,6 +226,11 @@ RegisterNetEvent('tri:garage', function(grant)
         if grant.leg == 'air' and last and last.kind == 'cp' then
             vehicle = placeInAir(hash, last.coords,
                 headingTo(last.coords, next_ and next_.coords) or 0.0)
+        elseif last and last.opens == grant.leg then
+            -- Written off before the leg's first checkpoint: back to their
+            -- OWN bay at the line-up, not a fixed offset from the tag where
+            -- somebody slower's vehicle is still parked.
+            vehicle = placeAtBay(hash, grant, last.coords)
         elseif back then
             vehicle = placeOnGround(hash, back.x + 2.0, back.y + 2.0, back.z,
                 headingTo(back, next_ and next_.coords) or (back.h or 0.0))
@@ -227,4 +255,9 @@ RegisterNetEvent('tri:garage', function(grant)
 
     kit.track(vehicle)
     memo.vehicle = vehicle
+
+    -- Reported by network id so the server's own ledger can sweep it when
+    -- this client never gets the chance: a disconnect mid-leg, or a mate
+    -- borrowing it and taking the ownership with them.
+    TriggerServerEvent('tri:spawned', NetworkGetNetworkIdFromEntity(vehicle))
 end)

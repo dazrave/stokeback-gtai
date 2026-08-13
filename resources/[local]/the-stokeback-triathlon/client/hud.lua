@@ -37,12 +37,19 @@ CreateThread(function()
             local me     = state.me or {}
 
             if state.phase == 'countdown' then
-                local seconds = status.countdown or 0
+                local seconds = status.countdown
 
-                -- The last three get their own size, because everybody leans
-                -- forward for them.
-                TriHUD.draw(seconds > 0 and tostring(seconds) or 'GO',
-                    0.5, 0.34, seconds > 0 and seconds <= 3 and 2.2 or 1.6)
+                if not seconds then
+                    -- Still being placed: the server has not armed the real
+                    -- count yet, and the provisional deadline it holds in the
+                    -- meantime is not a number anybody should see.
+                    TriHUD.draw(Config.flavour.READY_LINE or 'Hold.', 0.5, 0.34, 0.8)
+                else
+                    -- The last three get their own size, because everybody
+                    -- leans forward for them.
+                    TriHUD.draw(seconds > 0 and tostring(seconds) or 'GO',
+                        0.5, 0.34, seconds > 0 and seconds <= 3 and 2.2 or 1.6)
+                end
 
                 TriHUD.draw('~y~Run. Ride. Fly. In that order.', 0.5, 0.46, 0.5)
 
@@ -59,6 +66,71 @@ CreateThread(function()
             else
                 Wait(200)
             end
+        end
+    end
+end)
+
+-- ===== the podium =====
+-- Gold, silver, bronze and a sponsor nobody has heard of (flavour.PODIUM),
+-- drawn once the end shard has had its moment. Drawn rather than chatted,
+-- because a ceremony you can screenshot beats one that scrolls away.
+TriPodium = {}
+
+local ceremony = nil -- { from, showUntil, rows, sponsor }
+
+function TriPodium.show(standings)
+    local P = Config.flavour.PODIUM
+    if not P or type(standings) ~= 'table' then return end
+
+    local rows = {}
+    for _, entry in ipairs(standings) do
+        if entry.finished and #rows < #(P.MEDALS or {}) then
+            local medal = P.MEDALS[#rows + 1]
+            rows[#rows + 1] = ('%s%s~w~   %s   %s'):format(
+                medal.tint or '~w~', medal.label or '?', entry.name,
+                TriHUD.clock(math.floor((entry.time or 0) / 1000)))
+        end
+    end
+
+    if #rows == 0 then return end -- nobody finished: no ceremony, just shame
+
+    local now = GetGameTimer()
+    ceremony = {
+        from      = now + (P.DELAY_S or 6.5) * 1000,
+        showUntil = now + ((P.DELAY_S or 6.5) + (P.SECONDS or 12)) * 1000,
+        rows      = rows,
+        sponsor   = (P.SPONSORS and #P.SPONSORS > 0)
+            and (P.SPONSOR_LINE or 'Brought to you by %s.'):format(
+                P.SPONSORS[math.random(#P.SPONSORS)])
+            or nil,
+    }
+end
+
+CreateThread(function()
+    while true do
+        Wait(0)
+
+        local now = GetGameTimer()
+
+        -- `not inRace`: a new race started inside the ceremony window takes
+        -- the stage; nobody needs last race's podium over this race's line.
+        if ceremony and now >= ceremony.from and now < ceremony.showUntil
+            and not TriState().inRace then
+            TriHUD.draw(Config.flavour.PODIUM.TITLE or 'THE PODIUM', 0.5, 0.30, 0.9)
+
+            local y = 0.38
+            for _, row in ipairs(ceremony.rows) do
+                TriHUD.draw(row, 0.5, y, 0.6)
+                y = y + 0.045
+            end
+
+            if ceremony.sponsor then
+                TriHUD.draw('~c~' .. ceremony.sponsor, 0.5, y + 0.02, 0.42)
+            end
+        elseif ceremony and now >= ceremony.showUntil then
+            ceremony = nil
+        else
+            Wait(250)
         end
     end
 end)

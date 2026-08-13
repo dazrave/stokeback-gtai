@@ -16,6 +16,11 @@ TriRace = {}
 local racers  = {}  -- [src] = { name, slot, at, finished, position, ... }
 local course  = nil
 local finished = 0  -- how many have crossed the line, i.e. the next position
+local nextSlot = 0  -- monotonic: a leaver's slot is never dealt again, so two
+                    -- racers can never share a start peg or a vehicle bay
+local lastFinishAt = nil -- when the previous finisher crossed - the photo margin
+local lastFinisher = nil -- and who they were
+local fleet = {}    -- [src] = { netId, ... }: the server's own vehicle ledger
 
 -- ===== reading the world, not the message =====
 
@@ -57,7 +62,12 @@ end
 -- ===== the roster =====
 
 function TriRace.begin(built, players)
+    -- Anything a previous race's ledger still knows about goes first: a fresh
+    -- start line with somebody's old biplane parked across it is a bad joke.
+    TriRace.binAll()
+
     course, racers, finished = built, {}, 0
+    nextSlot, lastFinishAt, lastFinisher = 0, nil, nil
 
     local slot = 0
     for _, src in ipairs(players) do
@@ -75,12 +85,9 @@ function TriRace.add(src, slot)
     local existing = racers[src]
     if existing then return existing end
 
-    local count = 0
-    for _ in pairs(racers) do count = count + 1 end
-
     racers[src] = {
         name      = GetPlayerName(src) or ('#' .. src),
-        slot      = slot or (count + 1),
+        slot      = slot or (nextSlot + 1),
         at        = 1,      -- the waypoint they are heading for
         leg       = Config.LEG_ORDER[1],
         finished  = false,
@@ -88,11 +95,28 @@ function TriRace.add(src, slot)
         position  = nil,
         startedAt = GetGameTimer(),
         finishedAt = nil,
+        splitStart = GetGameTimer(), -- when their current discipline began
+        splits    = {},     -- [leg] = ms, stamped as each discipline closes
+        wrecks    = 0,      -- replacement vehicles granted, for the steward
         vehicleAt = 0,      -- last time they were handed a vehicle
         issued    = {},     -- [leg] = true once their line-up has been put out
     }
 
+    nextSlot = math.max(nextSlot, racers[src].slot)
+
     return racers[src]
+end
+
+-- The clock starts at GO, not at setup: everyone spent the same sixteen-odd
+-- seconds being placed and talked at, and a finish time with the briefing in
+-- it flatters nobody. Late joiners keep their add() stamp - they really did
+-- start late.
+function TriRace.markStart()
+    local now = GetGameTimer()
+    for _, racer in pairs(racers) do
+        racer.startedAt  = now
+        racer.splitStart = now
+    end
 end
 
 function TriRace.drop(src)
@@ -189,18 +213,30 @@ function TriRace.claim(src, index)
 
     racer.at = index + 1
 
+    local now = GetGameTimer()
+
     -- Off the end of the list: that was the finish.
     if racer.at > #course.waypoints then
         finished = finished + 1
 
         racer.finished   = true
         racer.position   = finished
-        racer.finishedAt = GetGameTimer()
+        racer.finishedAt = now
+        racer.splits[waypoint.leg] = now - racer.splitStart
+
+        -- The photo margin: how close behind the previous finisher, and who
+        -- they were. round.lua decides whether it is close enough to be drama.
+        racer.gapMs = lastFinishAt and (now - lastFinishAt) or nil
+        racer.gapTo = lastFinisher
+        lastFinishAt, lastFinisher = now, racer.name
 
         return true, 'finished', waypoint
     end
 
     if waypoint.opens then
+        -- A claimed transition closes the discipline it sits at the end of.
+        racer.splits[waypoint.leg] = now - racer.splitStart
+        racer.splitStart = now
         racer.leg = waypoint.opens
         return true, 'leg', waypoint
     end
@@ -237,6 +273,8 @@ function TriRace.grantVehicle(src, why, leg)
         racer.issued[leg] = true
     elseif now - racer.vehicleAt < (Config.vehicles.RECOVER_COOLDOWN_S or 8) * 1000 then
         return nil
+    else
+        racer.wrecks = racer.wrecks + 1 -- a recovery means the last one is scrap
     end
 
     racer.vehicleAt = now
@@ -251,6 +289,71 @@ function TriRace.grantVehicle(src, why, leg)
         -- crash halfway down a hill.
         at    = racer.at,
     }
+end
+
+-- ===== the server's own vehicle ledger =====
+-- Vehicles are spawned by the racer's client (it owns the ground they land
+-- on) and reported here by NETWORK ID, so the server can delete them itself.
+-- Without this, a racer disconnecting mid-leg - or a mate borrowing your bike
+-- so your own DeleteEntity no longer owns it - leaks a vehicle no client
+-- sweep can reach. Same shape as nick's escalation ledger: a client is
+-- trusted to CREATE, never to tidy.
+
+local function resolveNet(netId)
+    if not netId then return nil end
+
+    -- Guarded rather than assumed, exactly as nick does: if the native is
+    -- ever missing from the server build the clients' own sweeps still do
+    -- most of the tidying, which is a mode with a small leak in one corner
+    -- case rather than an error in every handler.
+    if type(NetworkGetEntityFromNetworkId) ~= 'function' then return nil end
+
+    local entity = NetworkGetEntityFromNetworkId(netId)
+    if not entity or entity == 0 or not DoesEntityExist(entity) then return nil end
+
+    return entity
+end
+
+local raceModels = nil -- lazy: GetHashKey wants the runtime, not file load
+
+function TriRace.registerVehicle(src, netId)
+    if not racers[src] then return end
+
+    local entity = resolveNet(netId)
+    if not entity then return end
+
+    -- Only the models this race hands out, and only from the machine that
+    -- owns the entity: registering somebody ELSE's plane would otherwise be
+    -- a way to have the server delete it out from under them later.
+    if not raceModels then
+        raceModels = {}
+        for _, legCfg in pairs(Config.legs) do
+            if legCfg.MODEL then raceModels[GetHashKey(legCfg.MODEL)] = true end
+        end
+    end
+
+    if not raceModels[GetEntityModel(entity)] then return end
+    if NetworkGetEntityOwner(entity) ~= src then return end
+
+    local list = fleet[src] or {}
+    list[#list + 1] = netId
+    if #list > 10 then table.remove(list, 1) end -- retired ones resolve to nothing anyway
+    fleet[src] = list
+end
+
+function TriRace.binVehicles(src)
+    for _, netId in ipairs(fleet[src] or {}) do
+        local entity = resolveNet(netId)
+        if entity then DeleteEntity(entity) end
+    end
+    fleet[src] = nil
+end
+
+-- Deliberately NOT part of clear(): the end-of-round sweep gives the clients
+-- a few seconds' head start (their gentle fade puts pilots down kindly), so
+-- the ledger has to outlive the race state it belongs to.
+function TriRace.binAll()
+    for src in pairs(fleet) do TriRace.binVehicles(src) end
 end
 
 -- ===== the table =====
@@ -316,6 +419,26 @@ function TriRace.publish()
     end
 
     return { order = order, racers = mine, total = #order }
+end
+
+-- The discipline awards: best split per leg across the field, for the
+-- fastest-runner/rider/pilot read-out at the end. A leg nobody completed
+-- simply has no winner.
+function TriRace.fastest()
+    local out = {}
+
+    for _, leg in ipairs(Config.LEG_ORDER) do
+        local best = nil
+        for _, racer in pairs(racers) do
+            local split = racer.splits[leg]
+            if split and (not best or split < best.ms) then
+                best = { name = racer.name, ms = split }
+            end
+        end
+        out[leg] = best
+    end
+
+    return out
 end
 
 -- The window shut. Everyone still out there is a DNF, which is a result in

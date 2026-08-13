@@ -10,10 +10,13 @@
 -- side does the same checks first purely so the claim is not fired forty times
 -- a second by somebody stood in a ring on the wrong vehicle.
 local memo = {
-    blip   = nil,
-    at     = nil, -- which waypoint the blip is for
-    sentAt = 0,   -- last claim, so a slow server round trip is not spammed
-    toldAt = 0,   -- last "you are in the wrong thing" nudge
+    blip      = nil,
+    at        = nil, -- which waypoint the blip is for
+    sentAt    = 0,   -- last claim, so a slow server round trip is not spammed
+    toldAt    = 0,   -- last "you are in the wrong thing" nudge
+    heckledAt = nil, -- which waypoint the nudges below are about
+    offence   = nil, -- and what for, so a new sin restarts the escalation
+    level     = 0,   -- how far up flavour.HECKLES the steward has climbed
 }
 
 -- Countdown counts as "showing", so the first checkpoint is already blipped
@@ -34,7 +37,8 @@ end
 
 -- Am I allowed to claim this one in what I am currently in? The same question
 -- the server asks, asked locally first so the answer can be shown as help text
--- rather than arriving as a mystery.
+-- rather than arriving as a mystery. Returns the OFFENCE (a key into
+-- flavour.HECKLES) rather than the words, because the words escalate.
 local function meets(waypoint)
     local rule = waypoint.require or 'none'
     if rule == 'none' then return true end
@@ -43,20 +47,18 @@ local function meets(waypoint)
 
     if rule == 'foot' then
         if not Config.rules.FOOT_CHECK then return true end
-        if vehicle ~= 0 then return false, 'This leg is on foot. Get out and run.' end
+        if vehicle ~= 0 then return false, 'FOOT' end
         return true
     end
 
     if Config.rules.VEHICLE_CHECK == 'off' then return true end
 
-    if vehicle == 0 then
-        return false, ('Not on foot - you want the %s.'):format(waypoint.model or 'vehicle')
-    end
+    if vehicle == 0 then return false, 'NEED_VEHICLE' end
 
     if Config.rules.VEHICLE_CHECK == 'any' then return true end
 
     if GetEntityModel(vehicle) ~= GetHashKey(waypoint.model or '') then
-        return false, ('Wrong vehicle. It has to be the %s.'):format(waypoint.model or 'right one')
+        return false, 'WRONG_VEHICLE'
     end
 
     return true
@@ -168,15 +170,27 @@ CreateThread(function()
         if not waypoint or (phase ~= 'racing' and phase ~= 'runout') then
             Wait(300)
         elseif SBM.inRadius(waypoint.coords, waypoint.radius or 5.0) then
-            local ok, why = meets(waypoint)
+            local ok, offence = meets(waypoint)
             local now = GetGameTimer()
 
             if not ok then
                 -- In the ring, in the wrong thing. Say so rather than let them
-                -- stand there watching a checkpoint refuse to tick over.
-                if now - memo.toldAt > 400 then
+                -- stand there watching a checkpoint refuse to tick over - and
+                -- the longer they stand there, the less polite it gets
+                -- (flavour.HECKLES, one rung per nag, sticking on the last).
+                local H = Config.flavour.HECKLES or {}
+
+                if now - memo.toldAt > (H.EVERY_S or 3) * 1000 then
+                    if memo.heckledAt ~= waypoint.at or memo.offence ~= offence then
+                        memo.heckledAt, memo.offence, memo.level = waypoint.at, offence, 0
+                    end
+
                     memo.toldAt = now
-                    help(why or 'Not like that.')
+                    memo.level  = math.min(memo.level + 1, math.max(#(H[offence] or {}), 1))
+
+                    local line  = (H[offence] or {})[memo.level]
+                    local model = waypoint.model or 'vehicle'
+                    help(line and line:format(model, model) or 'Not like that.')
                 end
             elseif now - memo.sentAt > 600 then
                 memo.sentAt = now
