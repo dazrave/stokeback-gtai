@@ -234,9 +234,9 @@ RegisterNetEvent('chase:role', function(role)
         end
     end
 
-    -- Golden-hour city, and no NPC police gatecrashing the chase.
-    NetworkOverrideClockTime(17, 30, 0)
-    SetWeatherTypeNowPersist('EXTRASUNNY')
+    -- The golden-hour clock and weather are the framework's now (the
+    -- descriptor's `clock` block) - set for everyone at the whistle, put
+    -- back at the end, instead of being stamped here and never returned.
 
     DoScreenFadeIn(800)
 
@@ -311,7 +311,6 @@ end)
 RegisterNetEvent('chase:end', function(result, fugitiveName)
     if state.frozen then FreezeEntityPosition(PlayerPedId(), false) end
     setState({ role = nil, status = {}, frozen = false })
-    ClearWeatherTypePersist()
 
     local shards = {
         escaped  = { 'CLEAN GETAWAY', (fugitiveName or '?') .. ' vanished into the city.' },
@@ -329,24 +328,17 @@ RegisterNetEvent('chase:end', function(result, fugitiveName)
     ChaseHUD.shard(shard[1], shard[2])
 end)
 
--- Player-versus-player damage, which FiveM disables by default. Without this
--- every shot between players is ignored: bullets pass through each other AND
--- through each other's tyres, which is why nothing seemed to take damage and
--- why the non-lethal rule looked like "nothing happens at all". Drive-bys are
--- explicitly enabled at the same time so drivers can shoot out of the window.
+-- Player-versus-player damage is the framework's job now: the descriptor
+-- says friendlyFire = 'auto' and core's referee (core/client/teams.lua)
+-- switches it on for the round, blocks it between coppers, and switches it
+-- back off at the end. What stays ours is the drive-by flag - drivers must
+-- be able to shoot out of the window, and no other mode wants that.
 CreateThread(function()
     while true do
         Wait(1000)
 
         if state.role then
-            NetworkSetFriendlyFireOption(true)
-            SetCanAttackFriendly(PlayerPedId(), true, true)
             SetPlayerCanDoDriveBy(PlayerId(), true)
-        else
-            -- Turn it off again the moment the round ends. Left on, it followed
-            -- everyone into the zombie modes and let mates shoot each other.
-            NetworkSetFriendlyFireOption(false)
-            SetCanAttackFriendly(PlayerPedId(), false, false)
         end
     end
 end)
