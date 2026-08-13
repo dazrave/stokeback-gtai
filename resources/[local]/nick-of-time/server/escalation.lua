@@ -277,23 +277,27 @@ end
 -- already reach SIGHT_AIR_RANGE through the one LOS rule - so the server's
 -- whole job here is the ration book and the announcement. Returns the pad to
 -- send its collector to, or false and control's reason why not.
+-- She lands wherever the asker is stood (his client picks the spot, since it
+-- owns that airspace); the pad only comes back as the FALLBACK for a copper
+-- with no room at all, so a map with no helipad tagged is no longer a reason
+-- to refuse. What the server still owns is the ration book and telling the
+-- room - the robber hearing that air support is up is half of what a star
+-- costs him.
+-- Returns granted(bool), pad(table|nil), why(string|nil).
 function NickEscalation.requestAirUnit()
     local A = Config.airUnit
-    if not A or not A.ENABLED then return false, 'no air support on the books.' end
-
-    local pads = Config.locations.helipads or {}
-    if #pads == 0 then
-        return false, 'no helipad on the map. Tag one and we will talk.'
-    end
+    if not A or not A.ENABLED then return false, nil, 'no air support on the books.' end
 
     if state.airUnits >= (A.PER_ROUND or 1) then
-        return false, 'you have had your helicopters for one round.'
+        return false, nil, 'you have had your helicopters for one round.'
     end
 
     setState({ airUnits = state.airUnits + 1 })
-    push({ kind = 'airunit', name = pads[1].name })
+    push({ kind = 'airunit' })
 
-    return pads[1]
+    -- No pad tagged is fine: nil simply means "no fallback", and his client
+    -- will tell him to find some open ground if it comes to that.
+    return true, (Config.locations.helipads or {})[1], nil
 end
 
 function NickEscalation.pinging()

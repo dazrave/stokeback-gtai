@@ -186,11 +186,13 @@ RegisterNetEvent('nick:airUnit', function()
     local src = source
     if NickRound.phase() ~= 'active' or src == NickRound.robber() then return end
 
-    local pad, why = NickEscalation.requestAirUnit()
-    if not pad then
+    local granted, pad, why = NickEscalation.requestAirUnit()
+    if not granted then
         return TriggerClientEvent('nick:radio', src, why or 'no.')
     end
 
+    -- The pad rides along as the FALLBACK only: his client lands her where he
+    -- is stood, and only walks to the pad if there is no room at all.
     TriggerClientEvent('nick:airUnitGo', src, pad)
 end)
 

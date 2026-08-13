@@ -441,11 +441,12 @@ CreateThread(function()
 end)
 
 -- ===== the piloted air unit =====
--- Darren, game night: "I thought we could spawn and pilot our own Heli?" -
--- now you can. /heli asks control; if the ration book allows it, a bird
--- lands on the pad for whoever goes and gets it. It carries no magic: the
--- air's only edge is SIGHT_AIR_RANGE through the same LOS rule as the
--- ground, and the robber gets a proximity icon in exchange (robber.lua).
+-- Darren, game night: "as a police. can we spawn in our own Heli and then
+-- back down as a car?" - so she comes to HIM. A ten minute round cannot
+-- afford a trek to Mission Row roof and back, which is what the first cut
+-- asked for. She carries no magic either way: the air's only edge is
+-- SIGHT_AIR_RANGE through the same LOS rule as the ground, and the robber
+-- gets his proximity icon in exchange (robber.lua).
 RegisterCommand((Config.airUnit and Config.airUnit.COMMAND) or 'heli', function()
     local role, status = NickState()
 
@@ -456,43 +457,133 @@ RegisterCommand((Config.airUnit and Config.airUnit.COMMAND) or 'heli', function(
     TriggerServerEvent('nick:airUnit')
 end, false)
 
--- The approval, back to whoever asked. The helicopter is NOT spawned until
--- its collector is nearly at the pad: OneSync treats an entity created a
--- long way from its creator as a rumour, and a rumour with rotors is how you
--- lose an aircraft before anyone has sat in it.
+-- Somewhere flat, clear, and near enough to walk to. Landing a helicopter is
+-- the fussiest placement in the mode - she is wide, she has a tail, and a
+-- rotor inside a lamppost is a firework - so a candidate has to pass three
+-- tests, and if none does we say so rather than guessing (the fleet spawn's
+-- discipline, with a bigger footprint).
+local function landingSpot()
+    local A     = Config.airUnit or {}
+    local me    = GetEntityCoords(PlayerPedId())
+    local clear = A.CLEARANCE or 9.0
+
+    for _, radius in ipairs(A.SEARCH_RADII or { 22.0, 38.0, 55.0 }) do
+        for step = 0, 7 do
+            local angle = math.rad(step * 45)
+            local x, y  = me.x + math.cos(angle) * radius, me.y + math.sin(angle) * radius
+
+            RequestCollisionAtCoord(x, y, me.z)
+
+            local found, groundZ = GetGroundZFor_3dCoord(x, y, me.z + 30.0, false)
+
+            if found then
+                -- Flat enough to sit on: probe the corners of her footprint
+                -- and refuse a slope. A helicopter on a hillside slides.
+                local level = true
+                for corner = 0, 3 do
+                    local ca = math.rad(corner * 90)
+                    local ok2, cz = GetGroundZFor_3dCoord(
+                        x + math.cos(ca) * clear, y + math.sin(ca) * clear, me.z + 30.0, false)
+                    if not ok2 or math.abs(cz - groundZ) > (A.MAX_SLOPE or 1.6) then
+                        level = false
+                        break
+                    end
+                end
+
+                -- And empty: no vehicle (including the cruiser you arrived
+                -- in) parked where the rotors are about to be.
+                if level then
+                    local blocked = false
+                    for _, other in ipairs(GetGamePool('CVehicle')) do
+                        if DoesEntityExist(other)
+                            and #(GetEntityCoords(other) - vector3(x, y, groundZ)) < clear then
+                            blocked = true
+                            break
+                        end
+                    end
+
+                    if not blocked then return vector3(x, y, groundZ) end
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
+-- The approval, back to whoever asked. SHE IS SPAWNED BY HIS OWN CLIENT, at
+-- his own feet: OneSync treats an entity created a long way from its creator
+-- as a rumour, and a rumour with rotors is how you lose an aircraft before
+-- anyone has sat in it.
 RegisterNetEvent('nick:airUnitGo', function(pad)
     local role = NickState()
-    if role ~= 'police' or not pad then return end
+    if role ~= 'police' then return end
 
-    NickHUD.notify(('~b~Air unit approved.~w~ She lands on the pad at %s - go and get her.')
-        :format(pad.name or 'the pad'))
+    local A    = Config.airUnit or {}
+    local spot = landingSpot()
 
+    -- Nowhere safe within reach: fall back to the pad and SAY so, rather than
+    -- putting a helicopter through a wall. Better a walk than a firework.
+    if not spot and pad then
+        NickHUD.notify(('~y~No room to land here.~w~ She is on the pad at %s instead.')
+            :format(pad.name or 'the pad'))
+        spot = vector3(pad.x, pad.y, pad.z)
+    end
+
+    if not spot then
+        return NickHUD.notify('~y~Nowhere to put her.~w~ Get out into the open and ask again.')
+    end
+
+    local hash = SBM.loadModel(A.MODEL or 'polmav')
+    if not hash then return end
+
+    RequestCollisionAtCoord(spot.x, spot.y, spot.z)
+
+    local heli = CreateVehicle(hash, spot.x, spot.y, spot.z + 1.0,
+        GetEntityHeading(PlayerPedId()), true, true)
+    SetModelAsNoLongerNeeded(hash)
+    if not DoesEntityExist(heli) then return end
+
+    SetVehicleOnGroundProperly(heli)
+    SetVehicleEngineOn(heli, true, true, false)
+    SetVehicleDoorsLocked(heli, 1) -- a locked helicopter is a cruel joke
+    fleet.track(heli)   -- swept with the cruisers at the whistle
+    NickReportCar(heli) -- and by the server if this client vanishes
+
+    NickHUD.notify('~b~She is down next to you.~w~ Mind the wires.')
+
+    -- Walked away from and left running, she goes home on her own. Otherwise
+    -- an evening of /heli fills the sky with parked helicopters - and every
+    -- one of them is a landmark the robber can navigate by. Empty, far from
+    -- the man who called her, for long enough: gone. Deleted through the
+    -- tracker she is already in, not a new mechanism.
     CreateThread(function()
-        local deadline = GetGameTimer() + 240000 -- takes too long and the offer lapses
+        local emptySince = 0
 
-        while GetGameTimer() < deadline do
-            Wait(1000)
+        while DoesEntityExist(heli) do
+            Wait(3000)
 
             local role2, status = NickState()
-            if role2 ~= 'police' or status.phase ~= 'active' then return end
+            if role2 ~= 'police' or not status.phase or status.phase == 'idle' then return end
 
-            if #(GetEntityCoords(PlayerPedId()) - vector3(pad.x, pad.y, pad.z))
-                < ((Config.airUnit and Config.airUnit.SPAWN_WITHIN) or 200.0) then
-                local hash = SBM.loadModel((Config.airUnit and Config.airUnit.MODEL) or 'polmav')
-                if not hash then return end
+            local manned = false
+            for seat = -1, 3 do
+                if not IsVehicleSeatFree(heli, seat) then manned = true break end
+            end
 
-                RequestCollisionAtCoord(pad.x, pad.y, pad.z)
+            local far = #(GetEntityCoords(heli) - GetEntityCoords(PlayerPedId()))
+                > (A.ABANDON_DISTANCE or 120.0)
 
-                local heli = CreateVehicle(hash, pad.x, pad.y, pad.z + 1.0, pad.h or 0.0, true, true)
-                SetModelAsNoLongerNeeded(hash)
-                if not DoesEntityExist(heli) then return end
+            if manned or not far then
+                emptySince = 0
+            else
+                if emptySince == 0 then emptySince = GetGameTimer() end
 
-                SetVehicleOnGroundProperly(heli)
-                fleet.track(heli)   -- swept with the cruisers at the whistle
-                NickReportCar(heli) -- and by the server if this client vanishes
-
-                NickHUD.notify('~b~She is on the pad.~w~ Mind the wires.')
-                return
+                if GetGameTimer() - emptySince > (A.ABANDON_AFTER_S or 60) * 1000 then
+                    if DoesEntityExist(heli) then DeleteEntity(heli) end
+                    NickHUD.notify('~b~Air unit recalled.~w~ She was getting cold.')
+                    return
+                end
             end
         end
     end)
@@ -727,7 +818,18 @@ CreateThread(function()
             local nearby = false
 
             for _, vehicle in ipairs(GetGamePool('CVehicle')) do
-                if DoesEntityExist(vehicle) and not IsEntityDead(vehicle)
+                -- AIRCRAFT DO NOT COUNT (Darren: "and then back down as a
+                -- car?"). A helicopter you just landed is not a way to chase
+                -- a man down a street, but it satisfied this check
+                -- perfectly - so a copper who put her down and walked away
+                -- was stranded on foot for the rest of the round with his
+                -- own aircraft sat next to him. Land, walk off, and the
+                -- relief cruiser now turns up exactly as designed.
+                local model = DoesEntityExist(vehicle) and GetEntityModel(vehicle) or 0
+                local wings = model ~= 0
+                    and (IsThisModelAHeli(model) or IsThisModelAPlane(model))
+
+                if DoesEntityExist(vehicle) and not IsEntityDead(vehicle) and not wings
                     and IsVehicleSeatFree(vehicle, -1)
                     and #(GetEntityCoords(vehicle) - me) < Config.police.RELIEF_RADIUS then
                     nearby = true

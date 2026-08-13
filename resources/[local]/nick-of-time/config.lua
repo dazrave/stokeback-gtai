@@ -326,11 +326,25 @@ Config = {
     -- the same LOS rules as the ground, and the robber gets the proximity
     -- icon (detection.HELI_PROXIMITY_ICON_RADIUS) as his fair warning.
     airUnit = {
-        ENABLED      = true,
-        MODEL        = 'polmav',
-        COMMAND      = 'heli',
-        PER_ROUND    = 2,     -- ask again after you put the first one in the sea
-        SPAWN_WITHIN = 200.0, -- materialises when its collector gets this close to the pad
+        ENABLED   = true,
+        MODEL     = 'polmav',
+        COMMAND   = 'heli',
+        PER_ROUND = 2, -- ask again after you put the first one in the sea
+
+        -- She comes to HIM (Darren: "can we spawn in our own Heli"). A ten
+        -- minute round cannot afford a trek to the pad and back, so the
+        -- request lands her at the nearest flat, empty spot - and the pad in
+        -- locations.helipads is only the fallback for a copper stood
+        -- somewhere with no room at all.
+        SEARCH_RADII = { 22.0, 38.0, 55.0 }, -- rings tried, nearest first
+        CLEARANCE    = 9.0,  -- her footprint: nothing parked inside this
+        MAX_SLOPE    = 1.6,  -- ground height spread across that footprint
+
+        -- Left running in a field, she goes home: empty AND this far from
+        -- the man who called her, for this long. Otherwise an evening of
+        -- /heli fills the sky with parked landmarks.
+        ABANDON_DISTANCE = 120.0,
+        ABANDON_AFTER_S  = 60,
     },
 
     -- ===== witness-modelled incident calls =====

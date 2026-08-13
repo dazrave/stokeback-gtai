@@ -289,9 +289,11 @@ local function announce(events)
 
         elseif event.kind == 'airunit' then
             -- The approval is public - a helicopter is not a secret for long,
-            -- and the robber hearing it is half of what he pays star money for.
-            tell(('Air unit approved - landing on the pad at %s. Somebody go and fly it.')
-                :format(event.name or 'the pad'))
+            -- and the robber hearing it is half of what he pays star money
+            -- for. WHERE she lands is not announced: that is a copper's
+            -- position, and the robber gets his warning from the proximity
+            -- icon when she is actually overhead, not from the tannoy.
+            tell('Air unit approved. Somebody up there has a helicopter and a licence to match.')
 
         elseif event.kind == 'heli' then
             radio(Config.flavour.RADIO_HELI_UP)
