@@ -37,6 +37,7 @@ TOKENS = DATA / "tokens.json"
 SCOPES = DATA / "scopes"
 SUBMITTED = SCOPES / "submitted"
 TAGS = DATA / "tags"
+PROFILES = DATA / "profiles.json"
 
 HOST = os.environ.get("SCOPE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("PORT", "8099"))
@@ -48,10 +49,12 @@ MAX_SCOPE_BODY = 64 * 1024   # bytes; the scope form alone gets the big cap
 MAX_SECTION = 4000           # characters per scope section
 MAX_NOTE = 300               # characters on a tag note
 MAX_NAME = 64
+MAX_PROFILE_FIELD = 40       # characters; fivem / discord on the profile card
 RATE_MAX = 6                 # invalid-token attempts...
 RATE_WINDOW = 3600           # ...per IP per hour (valid tokens are never limited)
 
 SLUG_RE = re.compile(r"^[a-z0-9-]{1,30}$")
+COLOUR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 # The only roles a tag may carry. Matches the dropdown in public/tag.html.
 TAG_ROLES = (
@@ -109,6 +112,37 @@ def write_json_atomic(path: Path, payload) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     tmp.replace(path)
+
+
+def load_profiles() -> dict:
+    """profiles.json - self-serve owner details. Missing file just means
+    nobody has saved one yet, so an empty dict (not None) is the fallback."""
+    data = read_json_file(PROFILES, {})
+    return data if isinstance(data, dict) else {}
+
+
+def profile_fivem(owner: str, token_fivem) -> str:
+    """The fivem name to use for this owner: their profile's, if they've set
+    one, otherwise tokens.json's. This is the single place anything matching
+    an owner to an in-game player should look."""
+    saved = load_profiles().get(owner)
+    fivem = saved.get("fivem") if isinstance(saved, dict) else None
+    return fivem or clean(str(token_fivem or ""), MAX_NAME)
+
+
+def profile_view(owner: str, entry: dict) -> dict:
+    """The caller's profile for the API: unset fields default empty, except
+    fivem, which falls back to tokens.json's (via entry, already resolved by
+    _auth) so the card is never blank on someone's first visit."""
+    saved = load_profiles().get(owner)
+    saved = saved if isinstance(saved, dict) else {}
+    return {
+        "owner": owner,
+        "fivem": saved.get("fivem") or (entry or {}).get("fivem", "") or "",
+        "discord": saved.get("discord") or "",
+        "colour": saved.get("colour") or "",
+        "updated": saved.get("updated") or "",
+    }
 
 
 def num(value, default=None):
@@ -193,6 +227,28 @@ def normalise_players(raw) -> list:
     return players
 
 
+# ---- AI briefing injection ----
+
+AI_CONTEXT_MARKER = b"<!--AI_CONTEXT-->"
+SCRIPT_CLOSE_RE = re.compile(rb"</script", re.IGNORECASE)
+
+
+def inject_ai_context(html: bytes) -> bytes:
+    """scope.html carries a literal AI_CONTEXT_MARKER inside a text/markdown
+    script tag; swap in the briefing doc fresh on every request, so a
+    chatbot fetching the raw form URL gets the full project context.
+    scope-context.md is the single source of truth - read fresh each time
+    since it is tiny and rarely changes."""
+    if AI_CONTEXT_MARKER not in html:
+        return html
+    try:
+        md = (PUBLIC / "scope-context.md").read_bytes()
+    except OSError:
+        return html
+    md = SCRIPT_CLOSE_RE.sub(lambda m: b"<\\/script", md)  # never let it close our tag early
+    return html.replace(AI_CONTEXT_MARKER, md)
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "sbm-scope/1.0"
 
@@ -239,7 +295,8 @@ class Handler(BaseHTTPRequestHandler):
                 return None
             self._reject("that key isn't on the list", 403)
             return None
-        return entry
+        # A saved profile's fivem name wins over tokens.json's from here on.
+        return {**entry, "fivem": profile_fivem(owner, entry.get("fivem"))}
 
     def _read_body(self, cap):
         length = int(self.headers.get("Content-Length", "0") or "0")
@@ -287,7 +344,30 @@ class Handler(BaseHTTPRequestHandler):
             if entry is None:
                 return
             slug = (params.get("slug") or [""])[0]
-            return self.get_scope(entry["owner"], slug)
+            owner = entry["owner"]
+            if slug:
+                # Reading a specific doc: any valid token may read any
+                # owner's - the write routes stay locked to the caller.
+                owner_param = (params.get("owner") or [""])[0]
+                if owner_param:
+                    if not SLUG_RE.match(owner_param):
+                        return self._reject("that owner looks wrong")
+                    owner = owner_param
+            return self.get_scope(owner, slug)
+
+        if route == "/api/scopes":
+            if self._auth(key) is None:
+                return
+            return self._json({"scopes": self.list_all_scopes()})
+
+        if route == "/api/profile":
+            entry = self._auth(key)
+            if entry is None:
+                return
+            return self._json(profile_view(entry["owner"], entry))
+
+        if route == "/scope/context":
+            return self.serve_scope_context()
 
         return self.serve_static(route)
 
@@ -298,6 +378,8 @@ class Handler(BaseHTTPRequestHandler):
             route = "/tag.html"
         elif route == "/scope":
             route = "/scope.html"
+        elif route == "/hub":
+            route = "/hub.html"
 
         target = (PUBLIC / route.lstrip("/")).resolve()
 
@@ -314,7 +396,21 @@ class Handler(BaseHTTPRequestHandler):
             ".ico": "image/x-icon",
         }.get(target.suffix, "application/octet-stream")
 
-        self._send(200, target.read_bytes(), ctype)
+        body = target.read_bytes()
+        if route == "/scope.html":
+            body = inject_ai_context(body)
+        self._send(200, body, ctype)
+
+    def serve_scope_context(self):
+        """The AI briefing doc, raw - no token needed, so pasting the link
+        into a chatbot just works. Same file scope.html injects into
+        itself, so there is exactly one place the briefing text lives."""
+        path = PUBLIC / "scope-context.md"
+        try:
+            body = path.read_bytes()
+        except OSError:
+            return self._send(404, b"not found")
+        self._send(200, body, "text/markdown; charset=utf-8")
 
     def list_gametypes(self) -> list:
         """Every scope doc plus the fixed catch-all. Tags with nowhere better
@@ -353,6 +449,39 @@ class Handler(BaseHTTPRequestHandler):
                 merged.extend(t for t in tags if isinstance(t, dict))
         merged.sort(key=lambda t: t.get("ts", 0), reverse=True)
         return self._json({"tags": merged[:200]})
+
+    def list_all_scopes(self) -> list:
+        """Every owner's scope doc for the read-only 'everyone's scopes'
+        list: live drafts plus submitted snapshots, deduped by (owner,
+        slug) with the most recently updated entry winning. Read-only -
+        the write routes never touch anyone but the caller."""
+        entries: dict[tuple, dict] = {}
+
+        def consider(doc):
+            if not isinstance(doc, dict):
+                return
+            owner = clean(str(doc.get("owner", "")), 30)
+            slug = str(doc.get("slug", ""))
+            if not owner or not SLUG_RE.match(owner) or not SLUG_RE.match(slug):
+                return
+            key = (owner, slug)
+            updated = doc.get("updated", 0) or 0
+            prev = entries.get(key)
+            if prev is None or updated >= prev["updated"]:
+                entries[key] = {
+                    "owner": owner,
+                    "name": clean(str(doc.get("name") or slug), 80),
+                    "slug": slug,
+                    "status": clean(str(doc.get("status", "draft")), 20),
+                    "updated": updated,
+                }
+
+        for path in sorted(SCOPES.glob("*.json")):
+            consider(read_json_file(path, None))
+        for path in sorted(SUBMITTED.glob("*.json")):
+            consider(read_json_file(path, None))
+
+        return sorted(entries.values(), key=lambda d: d["updated"], reverse=True)
 
     def get_scope(self, owner, slug):
         if slug:
@@ -393,6 +522,8 @@ class Handler(BaseHTTPRequestHandler):
 
         if route == "/api/scope":
             return self.put_scope()
+        if route == "/api/profile":
+            return self.put_profile()
         return self._send(404, b"not found")
 
     def _body_and_entry(self, cap):
@@ -513,6 +644,45 @@ class Handler(BaseHTTPRequestHandler):
 
         print(f"[scope] {owner} submitted {slug} -> {snapshot.name}")
         return self._json({"ok": True, "snapshot": snapshot.name})
+
+    def put_profile(self):
+        """Fields absent from the body are left as they were - this is what
+        lets the tag board's 'this is me' button send just {key, fivem}
+        without clobbering a saved discord name or colour. The normal
+        profile-card Save always sends all three, so that flow is
+        unaffected: a full body still fully replaces the saved profile."""
+        body, entry = self._body_and_entry(MAX_BODY)
+        if body is None:
+            return
+        owner = entry["owner"]
+        existing = load_profiles().get(owner)
+        existing = existing if isinstance(existing, dict) else {}
+
+        if "fivem" in body:
+            fivem = clean(body.get("fivem", ""), MAX_PROFILE_FIELD)
+        else:
+            fivem = existing.get("fivem", "")
+
+        if "discord" in body:
+            discord = clean(body.get("discord", ""), MAX_PROFILE_FIELD)
+        else:
+            discord = existing.get("discord", "")
+
+        if "colour" in body:
+            colour = str(body.get("colour") or "").strip()
+            if colour and not COLOUR_RE.match(colour):
+                return self._reject("colour must look like #rrggbb")
+        else:
+            colour = existing.get("colour", "")
+
+        now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        saved = {"fivem": fivem, "discord": discord, "colour": colour, "updated": now}
+        with _lock:
+            profiles = load_profiles()
+            write_json_atomic(PROFILES, {**profiles, owner: saved})
+
+        print(f"[scope] {owner} updated their profile")
+        return self._json({"ok": True, "profile": {"owner": owner, **saved}})
 
 
 def main():

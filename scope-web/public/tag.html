@@ -39,10 +39,18 @@
   .brand b{font-family:var(--font-display); text-transform:uppercase; letter-spacing:.08em; font-size:.95rem}
   .brand span{display:block; font-family:var(--font-mono); font-size:.6rem; letter-spacing:.22em;
     text-transform:uppercase; color:var(--dim)}
+  .navstrip{display:flex; align-items:center; gap:.4rem; flex-wrap:wrap}
   .navlink{font-family:var(--font-display); font-weight:700; text-transform:uppercase;
     letter-spacing:.06em; font-size:.78rem; padding:.55em 1em; border:1px solid var(--line);
     border-radius:9px; background:rgba(246,238,225,.03)}
   .navlink:hover{border-color:var(--ember); background:rgba(255,138,61,.07)}
+  .navlink.is-current{border-color:var(--ember); background:rgba(255,138,61,.12); color:var(--ember-soft)}
+  @media (max-width:480px){ .navlink{padding:.5em .7em; font-size:.72rem} }
+
+  .nokey{margin:2.4rem 0; padding:2rem 1.4rem; border:1px dashed var(--line); border-radius:14px;
+    text-align:center; color:var(--muted)}
+  .nokey__title{font-family:var(--font-display); font-weight:700; font-size:1.15rem; color:var(--ink); margin:0 0 .5rem}
+  .nokey__sub{font-size:.9rem; margin:0}
 
   .eyebrow{display:inline-flex; align-items:center; gap:.6em; font-family:var(--font-mono);
     text-transform:uppercase; letter-spacing:.24em; font-size:.68rem; color:var(--ember); margin:1.6rem 0 .5rem}
@@ -58,11 +66,48 @@
   .player{display:flex; align-items:center; justify-content:space-between; gap:.8rem;
     padding:.85rem 1rem; border:1px solid var(--line); border-radius:12px;
     background:linear-gradient(180deg,var(--panel),var(--panel-2))}
+  .player--you{border-color:rgba(255,138,61,.5); box-shadow:0 0 0 1px rgba(255,138,61,.15) inset}
   .player__who b{font-family:var(--font-display); font-size:1.08rem}
+  .player__you{color:var(--ember); font-family:var(--font-mono); font-size:.66rem;
+    text-transform:uppercase; letter-spacing:.1em; margin-left:.45em}
   .player__street{color:var(--amber); font-size:.85rem}
   .player__pos{font-family:var(--font-mono); font-size:.72rem; color:var(--dim); margin-top:.15rem}
+  .player__actions{display:flex; align-items:center; gap:.5rem; flex:none}
   .empty{padding:1.4rem 1rem; border:1px dashed var(--line); border-radius:12px;
     color:var(--dim); font-size:.92rem; text-align:center}
+
+  /* profile card */
+  .profile{margin:1rem 0 0; border:1px solid var(--line); border-radius:12px;
+    background:linear-gradient(180deg,var(--panel),var(--panel-2)); overflow:hidden}
+  .profile__toggle{width:100%; display:flex; align-items:center; justify-content:space-between;
+    gap:.6rem; background:none; border:none; color:var(--ink); font:inherit; text-align:left;
+    cursor:pointer; padding:.85rem 1rem}
+  .profile__toggle:hover{color:var(--ember-soft)}
+  .profile__toggle b{font-family:var(--font-display); font-weight:700; text-transform:uppercase;
+    letter-spacing:.06em; font-size:.85rem}
+  .profile__current{color:var(--dim); font-weight:400; font-family:var(--font-body); font-size:.85rem;
+    margin-left:.45em}
+  .profile__chev{color:var(--ember); transition:transform .2s ease; flex:none}
+  .profile__toggle[aria-expanded="true"] .profile__chev{transform:rotate(180deg)}
+  .profile__body{padding:.1rem 1rem 1.1rem}
+  .profile__body[hidden]{display:none}
+  .colourrow{display:flex; align-items:center; gap:.7rem}
+  input[type=color]{width:2.6rem; height:2.6rem; padding:.2rem; border:1px solid var(--line);
+    border-radius:8px; background:var(--bg); cursor:pointer}
+  .colourhex{font-family:var(--font-mono); font-size:.85rem; color:var(--dim); text-transform:uppercase}
+  .save-row{display:flex; align-items:center; gap:.8rem; margin-top:.2rem}
+  .save-tick{opacity:0; color:var(--good); font-family:var(--font-mono); font-size:.82rem;
+    transition:opacity .2s ease}
+  .save-tick.is-show{opacity:1}
+
+  .profile.is-incomplete{border-color:rgba(255,138,61,.55); box-shadow:0 0 0 1px rgba(255,138,61,.14) inset}
+  .profile__badge{display:inline-flex; align-items:center; margin-left:.5em; font-family:var(--font-mono);
+    font-size:.6rem; letter-spacing:.1em; text-transform:uppercase; color:var(--ember-soft);
+    border:1px solid rgba(255,138,61,.4); border-radius:999px; padding:.2em .55em; background:rgba(255,138,61,.1)}
+  .profile__badge[hidden]{display:none}
+  .profile__nudge{margin:0 0 .9rem; padding:.7em .9em; border-radius:9px; font-size:.85rem; color:#ffe9c9;
+    background:rgba(255,192,106,.08); border:1px solid rgba(255,192,106,.3)}
+  .profile__nudge[hidden]{display:none}
 
   .btn{display:inline-flex; align-items:center; gap:.5em; font-family:var(--font-display);
     font-weight:700; text-transform:uppercase; letter-spacing:.06em; font-size:.8rem;
@@ -73,7 +118,17 @@
   .btn--primary:hover{transform:translateY(-1px)}
   .btn--ghost{color:var(--ink); background:rgba(246,238,225,.03); border-color:var(--line)}
   .btn--ghost:hover{border-color:var(--ember); color:var(--ember-soft)}
+  .btn--sm{font-size:.68rem; padding:.5em .8em; min-height:2.2em}
   .btn[disabled]{opacity:.55; cursor:progress; transform:none}
+
+  .toast{position:fixed; left:50%; bottom:1.2rem; transform:translateX(-50%) translateY(4px); z-index:60;
+    background:var(--panel-2); border:1px solid rgba(95,208,168,.45); color:#d9fff0;
+    padding:.7em 1.15em; border-radius:999px; font-family:var(--font-mono); font-size:.8rem;
+    box-shadow:0 10px 30px -10px rgba(0,0,0,.6); opacity:0; pointer-events:none;
+    transition:opacity .25s ease, transform .25s ease}
+  .toast[hidden]{display:none}
+  .toast.is-show{opacity:1; transform:translateX(-50%) translateY(0)}
+  .toast.err{border-color:rgba(255,122,107,.5); color:#ffe2dd}
 
   /* tags list */
   .tagbar{display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; margin:.2rem 0 .8rem}
@@ -125,14 +180,61 @@
 <div class="wrap">
 
 <header>
-  <a class="brand" href="#" id="brand-link">
+  <a class="brand" href="/hub" id="brand-link">
     <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#121624"/><path d="M4 25L13 11l4 5 5-9 6 18z" fill="#ff8a3d"/><circle cx="16" cy="8" r="3" fill="#39b6ac"/></svg>
     <div><b>Tag Board</b><span>Stokeback Mountain</span></div>
   </a>
-  <a class="navlink" href="/scope" id="scope-link">Scope form →</a>
+  <nav class="navstrip" id="navstrip" aria-label="Site">
+    <a class="navlink" href="/hub" id="nav-hub">Hub</a>
+    <a class="navlink is-current" href="/tag" id="nav-tag" aria-current="page">Tag board</a>
+    <a class="navlink" href="/scope" id="nav-scope">Scope form</a>
+    <a class="navlink" href="/scope/context" id="nav-context">AI briefing</a>
+  </nav>
 </header>
 
+<div class="nokey" id="nokey" hidden>
+  <p class="nokey__title">No key — ask Darren for your link.</p>
+  <p class="nokey__sub">Everything here runs off a personal <code>?key=</code> link. Once you've
+    opened yours once, this page remembers it — no need to keep pasting it in.</p>
+</div>
+
+<div id="page-body">
+
 <p class="banner" id="banner" role="status" aria-live="polite"></p>
+
+<section class="profile" id="profile">
+  <button class="profile__toggle" id="profile-toggle" type="button" aria-expanded="false" aria-controls="profile-body">
+    <span><b>Your details</b><span class="profile__current" id="profile-current">not set</span>
+      <span class="profile__badge" id="profile-badge" hidden>details missing</span></span>
+    <span class="profile__chev" aria-hidden="true">▾</span>
+  </button>
+  <div class="profile__body" id="profile-body" hidden>
+    <p class="profile__nudge" id="profile-nudge" hidden>Fill these in — the audio recorder names your track by
+    your exact Discord name. In game now? Hit "this is me" next to your name below.</p>
+    <p class="hint">The audio recorder matches voices to people by Discord name — get it letter-perfect,
+    capitals and all, or you'll go down in the transcript as "Unknown Mountain Goat".</p>
+    <div class="field">
+      <label for="p-fivem">FiveM name</label>
+      <input type="text" id="p-fivem" maxlength="40" placeholder="e.g. DazRave" />
+    </div>
+    <div class="field">
+      <label for="p-discord">Discord name</label>
+      <input type="text" id="p-discord" maxlength="40" placeholder="e.g. DazRave" />
+    </div>
+    <div class="field">
+      <label for="p-colour">Caption colour</label>
+      <div class="colourrow">
+        <input type="color" id="p-colour" value="#ff8a3d" />
+        <span class="colourhex" id="p-colour-hex">#ff8a3d</span>
+      </div>
+    </div>
+    <div class="save-row">
+      <button class="btn btn--primary" type="button" id="p-save">Save</button>
+      <span class="save-tick" id="p-tick" aria-hidden="true">✓ saved</span>
+    </div>
+    <p class="status" id="p-status" role="status" aria-live="polite"></p>
+  </div>
+</section>
 
 <span class="eyebrow">On the mountain right now</span>
 <p class="hint">See a mate stood somewhere useful? Tag the spot before they wander off — a tag is a
@@ -147,7 +249,11 @@
 <div class="taglist" id="taglist"><div class="empty">No tags yet. The map remains tragically theoretical.</div></div>
 
 <footer><span class="pulse" id="pulse"></span><span id="foot-note">polling the mountain every 3s</span></footer>
+
+</div><!-- /page-body -->
 </div>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
 <!-- tag modal -->
 <div class="overlay" id="overlay" role="dialog" aria-modal="true" aria-labelledby="modal-title">
@@ -178,10 +284,18 @@
 (function(){
   "use strict";
 
-  var KEY = new URLSearchParams(location.search).get('key') || '';
+  // ---- sbm-key: resolve + remember the crew key (shared across pages) ----
+  var KEY = (function(){
+    var fromUrl = new URLSearchParams(location.search).get('key');
+    if (fromUrl){ try{ localStorage.setItem('sbm-key', fromUrl); }catch(e){} return fromUrl; }
+    try{ return localStorage.getItem('sbm-key') || ''; }catch(e){ return ''; }
+  })();
+  function keyedHref(path){ return path + (KEY ? '?key=' + encodeURIComponent(KEY) : ''); }
+
   var ROLES = ["player spawn","vehicle spawn","ai spawn","objective","item spawn",
     "round start area","extraction point","safe zone","zone boundary",
     "shop / interaction","set dressing","director cam","other"];
+  var myProfile = {fivem: '', discord: '', colour: '', updated: ''};
 
   var $ = function(id){ return document.getElementById(id); };
   function esc(s){
@@ -191,9 +305,12 @@
   }
   function api(path){ return path + (path.indexOf('?') < 0 ? '?' : '&') + 'key=' + encodeURIComponent(KEY); }
 
-  // keep the key in the links between the two pages
-  $('scope-link').href = '/scope?key=' + encodeURIComponent(KEY);
-  $('brand-link').href = '/?key=' + encodeURIComponent(KEY);
+  // keep the key in the links between pages
+  $('brand-link').href = keyedHref('/hub');
+  $('nav-hub').href = keyedHref('/hub');
+  $('nav-tag').href = keyedHref('/tag');
+  $('nav-scope').href = keyedHref('/scope');
+  $('nav-context').href = keyedHref('/scope/context');
 
   var banner = $('banner');
   function setBanner(msg, soft){
@@ -205,9 +322,8 @@
   var stopped = false;
   if (!KEY){
     stopped = true;
-    setBanner("No key in the URL — this page runs on ?key=… links. Ask Daz for yours.");
-    $('foot-note').textContent = 'idle — no key';
-    $('pulse').style.background = 'var(--danger)';
+    $('page-body').hidden = true;
+    $('nokey').hidden = false;
   }
 
   // ---- players ----
@@ -220,19 +336,37 @@
       playersEl.innerHTML = '<div class="empty">Nobody’s on the mountain. Suspiciously quiet.</div>';
       return;
     }
-    playersEl.innerHTML = list.map(function(p, i){
+    var mine = (myProfile.fivem || '').trim().toLowerCase();
+    var sorted = list.slice().sort(function(a, b){
+      var am = mine && String(a.name).trim().toLowerCase() === mine;
+      var bm = mine && String(b.name).trim().toLowerCase() === mine;
+      if (am === bm) return 0;
+      return am ? -1 : 1;
+    });
+    playersEl.innerHTML = sorted.map(function(p){
+      var i = list.indexOf(p);
+      var isMe = mine && String(p.name).trim().toLowerCase() === mine;
       var where = p.street ? esc(p.street) + (p.area ? ' · ' + esc(p.area) : '') : (p.area ? esc(p.area) : '');
-      return '<div class="player">' +
+      var meBtn = isMe ? '' :
+        '<button class="btn btn--ghost btn--sm" data-me="' + i + '" type="button">this is me</button>';
+      return '<div class="player' + (isMe ? ' player--you' : '') + '">' +
         '<div class="player__who"><b>' + esc(p.name) + '</b>' +
+          (isMe ? ' <span class="player__you">(you)</span>' : '') +
           (where ? ' <span class="player__street">' + where + '</span>' : '') +
           '<div class="player__pos">x ' + esc(p.x) + ' · y ' + esc(p.y) + ' · z ' + esc(p.z) +
           ' · hdg ' + esc(p.heading) + '</div></div>' +
-        '<button class="btn btn--primary" data-i="' + i + '" type="button">Tag</button>' +
+        '<div class="player__actions">' + meBtn +
+          '<button class="btn btn--primary" data-i="' + i + '" type="button">Tag</button></div>' +
       '</div>';
     }).join('');
   }
 
   playersEl.addEventListener('click', function(ev){
+    var meBtn = ev.target.closest('button[data-me]');
+    if (meBtn){
+      claimThisIsMe(lastPlayers[Number(meBtn.dataset.me)]);
+      return;
+    }
     var btn = ev.target.closest('button[data-i]');
     if (!btn) return;
     var p = lastPlayers[Number(btn.dataset.i)];
@@ -394,6 +528,135 @@
       mStatus.className = 'status is-show err';
     });
   });
+
+  // ---- your details (self-serve profile) ----
+  var profileToggle = $('profile-toggle');
+  var profileBody = $('profile-body');
+  var pStatus = $('p-status');
+
+  function updateProfileHeader(){
+    $('profile-current').textContent = myProfile.fivem ? '(' + myProfile.fivem + ')' : '(not set)';
+  }
+
+  // Incomplete = never saved, or missing discord / colour (fivem alone
+  // doesn't count - tokens.json already seeds that). Complete profiles get
+  // the quiet collapsed card exactly as before; incomplete ones start
+  // expanded, with an accent border, a header badge and a nudge line.
+  function isProfileIncomplete(p){
+    return !p.updated || !p.discord || !p.colour;
+  }
+  function applyProfileIncompleteness(initial){
+    var incomplete = isProfileIncomplete(myProfile);
+    $('profile').classList.toggle('is-incomplete', incomplete);
+    $('profile-badge').hidden = !incomplete;
+    $('profile-nudge').hidden = !incomplete;
+    if (initial && incomplete){
+      profileToggle.setAttribute('aria-expanded', 'true');
+      profileBody.hidden = false;
+    }
+  }
+
+  profileToggle.addEventListener('click', function(){
+    var open = profileToggle.getAttribute('aria-expanded') === 'true';
+    profileToggle.setAttribute('aria-expanded', open ? 'false' : 'true');
+    profileBody.hidden = open;
+  });
+
+  $('p-colour').addEventListener('input', function(){
+    $('p-colour-hex').textContent = this.value;
+  });
+
+  function loadProfile(){
+    if (!KEY) return;
+    fetch(api('/api/profile')).then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(d){
+        if (!d) return;
+        myProfile = {fivem: d.fivem || '', discord: d.discord || '', colour: d.colour || '', updated: d.updated || ''};
+        $('p-fivem').value = myProfile.fivem;
+        $('p-discord').value = myProfile.discord;
+        if (myProfile.colour){
+          $('p-colour').value = myProfile.colour;
+          $('p-colour-hex').textContent = myProfile.colour;
+        }
+        updateProfileHeader();
+        applyProfileIncompleteness(true);
+        renderPlayers(lastPlayers);   // pick up the (you) badge straight away
+      }).catch(function(){});
+  }
+  loadProfile();
+
+  $('p-save').addEventListener('click', function(){
+    var btn = $('p-save');
+    btn.disabled = true;
+    pStatus.className = 'status';
+    fetch('/api/profile', {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        key: KEY,
+        fivem: $('p-fivem').value.trim(),
+        discord: $('p-discord').value.trim(),
+        colour: $('p-colour').value
+      })
+    }).then(function(res){
+      return res.json().catch(function(){ return {}; }).then(function(d){ return {ok: res.ok, d: d}; });
+    }).then(function(r){
+      btn.disabled = false;
+      if (r.ok && r.d.ok){
+        var saved = r.d.profile || {};
+        myProfile = {fivem: saved.fivem || '', discord: saved.discord || '', colour: saved.colour || '', updated: saved.updated || ''};
+        updateProfileHeader();
+        applyProfileIncompleteness(false);
+        renderPlayers(lastPlayers);
+        var tick = $('p-tick');
+        tick.classList.add('is-show');
+        setTimeout(function(){ tick.classList.remove('is-show'); }, 1600);
+      } else {
+        pStatus.textContent = (r.d && r.d.error) || 'That didn’t stick — try again.';
+        pStatus.className = 'status is-show err';
+      }
+    }).catch(function(){
+      btn.disabled = false;
+      pStatus.textContent = 'Couldn’t reach the server — try again in a sec.';
+      pStatus.className = 'status is-show err';
+    });
+  });
+
+  // ---- "this is me" (claim a live player as your profile's fivem name) ----
+  var toastTimer = null;
+  function showToast(msg, isErr){
+    var el = $('toast');
+    el.hidden = false;
+    el.textContent = msg;
+    el.className = 'toast is-show' + (isErr ? ' err' : '');
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ el.classList.remove('is-show'); }, 2200);
+  }
+
+  function claimThisIsMe(p){
+    if (!p || !KEY) return;
+    fetch('/api/profile', {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({key: KEY, fivem: p.name})
+    }).then(function(res){
+      return res.json().catch(function(){ return {}; }).then(function(d){ return {ok: res.ok, d: d}; });
+    }).then(function(r){
+      if (r.ok && r.d.ok){
+        var saved = r.d.profile || {};
+        myProfile = {fivem: saved.fivem || '', discord: saved.discord || '', colour: saved.colour || '', updated: saved.updated || ''};
+        $('p-fivem').value = myProfile.fivem;
+        updateProfileHeader();
+        applyProfileIncompleteness(false);
+        renderPlayers(lastPlayers);
+        showToast('You’re ' + myProfile.fivem);
+      } else {
+        showToast((r.d && r.d.error) || 'Couldn’t claim that — try again.', true);
+      }
+    }).catch(function(){
+      showToast('Couldn’t reach the server — try again.', true);
+    });
+  }
 })();
 </script>
 </body>

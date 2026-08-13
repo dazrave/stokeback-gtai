@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Stokeback Mountain — Hub</title>
+<meta name="description" content="Everything for game night in one link: tag board, scope form, AI briefing, idea box." />
+<meta name="theme-color" content="#0a0c12" />
+<meta name="color-scheme" content="dark" />
+<meta name="robots" content="noindex" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Crect%20width='32'%20height='32'%20rx='7'%20fill='%230a0c12'/%3E%3Cpath%20d='M4%2024L13%2011l4%205%205-8%206%2016z'%20fill='%23ff8a3d'/%3E%3Ccircle%20cx='16'%20cy='9'%20r='3'%20fill='%2339b6ac'/%3E%3C/svg%3E" />
+<style>
+  :root{
+    --bg:#0a0c12; --bg-2:#0e111b; --panel:#121624; --panel-2:#161b2c;
+    --ink:#f6eee1; --muted:#b7ad9d; --dim:#8a8798; --line:rgba(246,238,225,.12);
+    --ember:#ff8a3d; --ember-deep:#e0662a; --ember-soft:#ffb46b;
+    --teal:#39b6ac; --amber:#ffc06a; --rose:#ff8fa0;
+    --danger:#ff7a6b; --good:#5fd0a8;
+    --font-display:"Rockwell","Rockwell Nova","Roboto Slab","Zilla Slab","Bookman Old Style",Georgia,serif;
+    --font-body:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --font-mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--bg); color:var(--ink); font-family:var(--font-body);
+    font-size:16px; line-height:1.55; -webkit-font-smoothing:antialiased}
+  a{color:var(--ember); text-decoration:none}
+  a:hover{color:var(--ember-soft)}
+  h1,h2,h3{font-family:var(--font-display); font-weight:700; line-height:1.05; margin:0}
+  ::selection{background:var(--ember); color:#1a1206}
+  :focus-visible{outline:2px solid var(--ember); outline-offset:3px; border-radius:4px}
+
+  .wrap{width:min(100% - 1.6rem, 860px); margin-inline:auto}
+
+  header{display:flex; align-items:center; justify-content:space-between; gap:.8rem;
+    padding:.9rem 0; border-bottom:1px solid var(--line); flex-wrap:wrap}
+  .brand{display:flex; align-items:center; gap:.6rem; color:var(--ink)}
+  .brand svg{width:30px; height:30px; flex:none}
+  .brand b{font-family:var(--font-display); text-transform:uppercase; letter-spacing:.08em; font-size:.95rem}
+  .brand span{display:block; font-family:var(--font-mono); font-size:.6rem; letter-spacing:.22em;
+    text-transform:uppercase; color:var(--dim)}
+  .navstrip{display:flex; align-items:center; gap:.4rem; flex-wrap:wrap}
+  .navlink{font-family:var(--font-display); font-weight:700; text-transform:uppercase;
+    letter-spacing:.06em; font-size:.78rem; padding:.55em 1em; border:1px solid var(--line);
+    border-radius:9px; background:rgba(246,238,225,.03)}
+  .navlink:hover{border-color:var(--ember); background:rgba(255,138,61,.07)}
+  .navlink.is-current{border-color:var(--ember); background:rgba(255,138,61,.12); color:var(--ember-soft)}
+  @media (max-width:480px){ .navlink{padding:.5em .7em; font-size:.72rem} }
+
+  .hero{margin:2.2rem 0 1.4rem}
+  .hero h1{font-size:1.7rem}
+  .hero .tagline{color:var(--dim); font-size:.92rem; margin:.55rem 0 0; max-width:46ch}
+  .nokey-hint{margin-top:.7rem; padding:.6em .9em; border-radius:9px; font-size:.85rem;
+    color:#ffe9c9; background:rgba(255,192,106,.08); border:1px solid rgba(255,192,106,.3)}
+  .nokey-hint[hidden]{display:none}
+
+  .cards{display:grid; gap:1rem; margin-top:.4rem}
+  @media (min-width:640px){ .cards{grid-template-columns:1fr 1fr} }
+  .card{display:block; padding:1.15rem 1.25rem; border:1px solid var(--line); border-radius:14px;
+    background:linear-gradient(180deg,var(--panel),var(--panel-2));
+    transition:border-color .2s ease, transform .15s ease}
+  .card:hover{border-color:rgba(255,138,61,.5); transform:translateY(-2px)}
+  .card .kicker{display:block; font-family:var(--font-mono); font-size:.64rem; letter-spacing:.16em;
+    text-transform:uppercase; color:var(--teal); margin-bottom:.4rem}
+  .card h3{font-size:1.12rem}
+  .card p{color:var(--muted); font-size:.9rem; margin:.5rem 0 0; line-height:1.5}
+  .card__hint{display:block; margin-top:.6rem; font-family:var(--font-mono); font-size:.72rem;
+    letter-spacing:.08em; text-transform:uppercase; color:var(--ember-soft)}
+  .card__hint[hidden]{display:none}
+
+  footer{margin:2.6rem 0 1.6rem; color:var(--dim); font-size:.78rem; font-family:var(--font-mono)}
+  footer code{color:var(--amber)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <a class="brand" href="/hub" id="brand-link">
+    <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#121624"/><path d="M4 25L13 11l4 5 5-9 6 18z" fill="#ff8a3d"/><circle cx="16" cy="8" r="3" fill="#39b6ac"/></svg>
+    <div><b>Hub</b><span>Stokeback Mountain</span></div>
+  </a>
+  <nav class="navstrip" id="navstrip" aria-label="Site">
+    <a class="navlink is-current" href="/hub" id="nav-hub" aria-current="page">Hub</a>
+    <a class="navlink" href="/tag" id="nav-tag">Tag board</a>
+    <a class="navlink" href="/scope" id="nav-scope">Scope form</a>
+    <a class="navlink" href="/scope/context" id="nav-context">AI briefing</a>
+  </nav>
+</header>
+
+<section class="hero">
+  <h1 id="greeting">Alright.</h1>
+  <p class="tagline">Six mates, an apocalypse, and a scope form standing between us and Friday.</p>
+  <p class="nokey-hint" id="nokey-hint" hidden>No key on this link yet — the tag board and scope
+    form will ask Darren for one. Everything else below still works.</p>
+</section>
+
+<div class="cards">
+  <a class="card" id="card-tag" href="/tag">
+    <span class="kicker">Live right now</span>
+    <h3>Tag board</h3>
+    <p>Who's in game right now — stand on a spot, tag what it's for.</p>
+    <span class="card__hint" id="tag-hint" hidden>finish your details →</span>
+  </a>
+  <a class="card" id="card-scope" href="/scope">
+    <span class="kicker">Yours to own</span>
+    <h3>Scope form</h3>
+    <p>Your gametype's scope of work — autosaves, submit when night one is honest.</p>
+  </a>
+  <a class="card" id="card-context" href="/scope/context">
+    <span class="kicker">No key needed</span>
+    <h3>AI briefing</h3>
+    <p>Talking your idea through with ChatGPT/Claude first? Give the bot this link — it explains
+      the whole project.</p>
+  </a>
+  <a class="card" id="card-idea" href="https://sbm.dazrave.uk/" target="_blank" rel="noopener">
+    <span class="kicker">Elsewhere</span>
+    <h3>Idea box</h3>
+    <p>One-liner ideas for any mode — votes and all.</p>
+  </a>
+</div>
+
+<footer>Game night: Fridays, 20:00 UK &middot; LAN connect <code>connect 192.168.0.212:30120</code></footer>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---- sbm-key: resolve + remember the crew key (shared across pages) ----
+  var KEY = (function(){
+    var fromUrl = new URLSearchParams(location.search).get('key');
+    if (fromUrl){ try{ localStorage.setItem('sbm-key', fromUrl); }catch(e){} return fromUrl; }
+    try{ return localStorage.getItem('sbm-key') || ''; }catch(e){ return ''; }
+  })();
+  function keyedHref(path){ return path + (KEY ? '?key=' + encodeURIComponent(KEY) : ''); }
+
+  var $ = function(id){ return document.getElementById(id); };
+  function api(path){ return path + (path.indexOf('?') < 0 ? '?' : '&') + 'key=' + encodeURIComponent(KEY); }
+
+  $('brand-link').href = keyedHref('/hub');
+  $('nav-hub').href = keyedHref('/hub');
+  $('nav-tag').href = keyedHref('/tag');
+  $('nav-scope').href = keyedHref('/scope');
+  $('nav-context').href = keyedHref('/scope/context');
+  $('card-tag').href = keyedHref('/tag');
+  $('card-scope').href = keyedHref('/scope');
+  // AI briefing and the idea box stay key-free on purpose: one's meant for a
+  // chatbot, the other's a different app entirely.
+
+  // No key yet? The hub is still useful (AI briefing + idea box need none),
+  // so it stays up rather than blocking with a full-page note - just a
+  // gentle hint, and no doomed /api/profile call.
+  if (!KEY){
+    $('nokey-hint').hidden = false;
+    $('greeting').textContent = 'Alright, stranger.';
+    return;
+  }
+
+  fetch(api('/api/profile')).then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(d){
+      if (!d) return;
+      var name = d.fivem || d.owner;
+      if (name) $('greeting').textContent = 'Alright, ' + name + '.';
+      // Same incompleteness rule as the tag board's "Your details" card:
+      // never saved, or missing discord / colour.
+      var incomplete = !d.updated || !d.discord || !d.colour;
+      if (incomplete) $('tag-hint').hidden = false;
+    }).catch(function(){});
+})();
+</script>
+</body>
+</html>

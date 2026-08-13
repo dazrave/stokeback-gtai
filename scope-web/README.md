@@ -56,6 +56,26 @@ Tars `server.py public sbm-scope.service` to `/opt/sbm-scope` on the CT (via
 the prox1 hop), installs/refreshes the systemd unit, restarts, curls
 `/api/health`. The data dir is never touched.
 
+## Profiles
+
+Owners set their own FiveM name, Discord name and caption colour from a
+"Your details" card on the tag board — no more Darren hand-editing files.
+Self-serve, stored at `data/profiles.json` (created on first save). A saved
+fivem name wins over tokens.json's wherever the server matches an owner to
+an in-game player. An unset field falls back sensibly (fivem to tokens.json,
+everything else to empty) so `GET /api/profile` is never blank.
+
+To pull those details into the crew roster in `stokeback-production` (fields
+a profile hasn't set are left alone; everything else on a crew entry -
+angle, owns, order - is untouched):
+
+```bash
+CT=<container-id> scope-web/sync-roster.sh
+```
+
+It prints a before/after diff and never commits — review it and commit
+`roster.json` yourself.
+
 ## Pull → promote
 
 ```bash

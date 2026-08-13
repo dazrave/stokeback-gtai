@@ -39,15 +39,32 @@
   .brand b{font-family:var(--font-display); text-transform:uppercase; letter-spacing:.08em; font-size:.95rem}
   .brand span{display:block; font-family:var(--font-mono); font-size:.6rem; letter-spacing:.22em;
     text-transform:uppercase; color:var(--dim)}
+  .navstrip{display:flex; align-items:center; gap:.4rem; flex-wrap:wrap}
   .navlink{font-family:var(--font-display); font-weight:700; text-transform:uppercase;
     letter-spacing:.06em; font-size:.78rem; padding:.55em 1em; border:1px solid var(--line);
     border-radius:9px; background:rgba(246,238,225,.03)}
   .navlink:hover{border-color:var(--ember); background:rgba(255,138,61,.07)}
+  .navlink.is-current{border-color:var(--ember); background:rgba(255,138,61,.12); color:var(--ember-soft)}
+  @media (max-width:480px){ .navlink{padding:.5em .7em; font-size:.72rem} }
+
+  .nokey{margin:2.4rem 0; padding:2rem 1.4rem; border:1px dashed var(--line); border-radius:14px;
+    text-align:center; color:var(--muted)}
+  .nokey__title{font-family:var(--font-display); font-weight:700; font-size:1.15rem; color:var(--ink); margin:0 0 .5rem}
+  .nokey__sub{font-size:.9rem; margin:0}
+
+  .ai-hint{margin:1.1rem 0 0; padding:.85rem 1rem; border:1px dashed var(--line); border-radius:12px;
+    background:rgba(57,182,172,.06); font-size:.85rem; color:var(--muted)}
+  .ai-hint__row{display:flex; gap:.5rem; margin:.5rem 0; flex-wrap:wrap}
+  .ai-hint__row input{flex:1; min-width:220px; font-family:var(--font-mono); font-size:.78rem; color:var(--teal)}
+  .ai-hint__note{color:var(--dim); font-size:.8rem}
 
   .banner{display:none; margin-top:1rem; padding:.8em 1em; border-radius:10px; font-size:.92rem;
     background:rgba(255,122,107,.1); border:1px solid rgba(255,122,107,.35); color:#ffe2dd}
   .banner.is-show{display:block}
   .banner.ok{background:rgba(95,208,168,.1); border-color:rgba(95,208,168,.35); color:#d9fff0}
+  .ro-banner{margin:.9rem 0 0; padding:.8em 1em; border-radius:10px; font-size:.92rem;
+    background:rgba(255,192,106,.08); border:1px solid rgba(255,192,106,.3); color:#ffe9c9}
+  .ro-banner[hidden]{display:none}
 
   .eyebrow{display:inline-flex; align-items:center; gap:.6em; font-family:var(--font-mono);
     text-transform:uppercase; letter-spacing:.24em; font-size:.68rem; color:var(--ember); margin:1.6rem 0 .4rem}
@@ -142,12 +159,36 @@
 <div class="wrap">
 
 <header>
-  <a class="brand" href="/scope" id="brand-link">
+  <a class="brand" href="/hub" id="brand-link">
     <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#121624"/><path d="M4 25L13 11l4 5 5-9 6 18z" fill="#ff8a3d"/><rect x="13" y="6" width="8" height="2" fill="#ffc06a"/><rect x="13" y="9" width="6" height="2" fill="#ffc06a"/></svg>
     <div><b>Scope Form</b><span>Stokeback Mountain</span></div>
   </a>
-  <a class="navlink" href="/tag" id="tag-link">← Tag board</a>
+  <nav class="navstrip" id="navstrip" aria-label="Site">
+    <a class="navlink" href="/hub" id="nav-hub">Hub</a>
+    <a class="navlink" href="/tag" id="nav-tag">Tag board</a>
+    <a class="navlink is-current" href="/scope" id="nav-scope" aria-current="page">Scope form</a>
+    <a class="navlink" href="/scope/context" id="nav-context">AI briefing</a>
+  </nav>
 </header>
+
+<script type="text/markdown" id="ai-context"><!--AI_CONTEXT--></script>
+
+<div class="ai-hint" id="ai-hint">
+  <span>🤖 Want to talk it through with an AI first? Give your chatbot this link:</span>
+  <div class="ai-hint__row">
+    <input class="control" type="text" id="ai-link" readonly aria-label="AI briefing link" />
+    <button class="btn btn--ghost" type="button" id="ai-copy">Copy</button>
+  </div>
+  <span class="ai-hint__note">— then paste its answers straight in.</span>
+</div>
+
+<div class="nokey" id="nokey" hidden>
+  <p class="nokey__title">No key — ask Darren for your link.</p>
+  <p class="nokey__sub">Everything here runs off a personal <code>?key=</code> link. Once you've
+    opened yours once, this page remembers it — no need to keep pasting it in.</p>
+</div>
+
+<div id="page-body">
 
 <p class="banner" id="banner" role="status" aria-live="polite"></p>
 
@@ -162,11 +203,17 @@
       placeholder="New gametype name — pub-quiz-team rules apply" />
     <button class="btn btn--primary" type="button" id="new-btn">Start scoping</button>
   </div>
+
+  <span class="eyebrow" style="margin-top:2rem">Everyone's scopes</span>
+  <p class="quip" style="color:var(--dim); font-size:.85rem; margin:.2rem 0 0">
+    Read-only — no reason to hide them. Have a nose at what everyone else is cooking.</p>
+  <div class="drafts" id="all-scopes"><div class="empty">Loading…</div></div>
 </div>
 
 <!-- ============ EDITOR VIEW ============ -->
 <div id="view-editor" style="display:none">
   <span class="eyebrow" id="ed-eyebrow">Scoping</span>
+  <p class="ro-banner" id="ro-banner" hidden></p>
 
   <div class="section">
     <h3><span class="n">01</span> The gametype</h3>
@@ -284,6 +331,8 @@
   <footer>Autosaves every ~25s while you type. Submitting files a snapshot for triage — you can resubmit any time.</footer>
 </div>
 
+</div><!-- /page-body -->
+
 </div><!-- /wrap -->
 
 <!-- sticky save bar -->
@@ -300,7 +349,14 @@
 (function(){
   "use strict";
 
-  var KEY = new URLSearchParams(location.search).get('key') || '';
+  // ---- sbm-key: resolve + remember the crew key (shared across pages) ----
+  var KEY = (function(){
+    var fromUrl = new URLSearchParams(location.search).get('key');
+    if (fromUrl){ try{ localStorage.setItem('sbm-key', fromUrl); }catch(e){} return fromUrl; }
+    try{ return localStorage.getItem('sbm-key') || ''; }catch(e){ return ''; }
+  })();
+  function keyedHref(path){ return path + (KEY ? '?key=' + encodeURIComponent(KEY) : ''); }
+
   var $ = function(id){ return document.getElementById(id); };
   function esc(s){
     return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
@@ -312,9 +368,32 @@
     return String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 30);
   }
 
-  $('tag-link').href = '/?key=' + encodeURIComponent(KEY);
-  $('tag-link-2').href = '/?key=' + encodeURIComponent(KEY);
-  $('brand-link').href = '/scope?key=' + encodeURIComponent(KEY);
+  $('brand-link').href = keyedHref('/hub');
+  $('nav-hub').href = keyedHref('/hub');
+  $('nav-tag').href = keyedHref('/tag');
+  $('nav-scope').href = keyedHref('/scope');
+  $('nav-context').href = keyedHref('/scope/context');
+  $('tag-link-2').href = keyedHref('/tag');
+
+  // AI briefing hint: a clean, key-free link, ready to hand to a chatbot
+  var aiLink = location.origin + '/scope/context';
+  $('ai-link').value = aiLink;
+  $('ai-copy').addEventListener('click', function(){
+    $('ai-link').select();
+    var copied = false;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(aiLink);
+        copied = true;
+      } else {
+        copied = document.execCommand('copy');
+      }
+    } catch (e){ copied = false; }
+    var btn = $('ai-copy');
+    var was = btn.textContent;
+    btn.textContent = copied ? 'Copied!' : 'Select & copy';
+    setTimeout(function(){ btn.textContent = was; }, 1600);
+  });
 
   var banner = $('banner');
   function setBanner(msg, ok){
@@ -324,9 +403,8 @@
   }
 
   if (!KEY){
-    setBanner("No key in the URL — this page runs on ?key=… links. Ask Daz for yours.");
-    $('drafts').innerHTML = '<div class="empty">No key, no scoping. Them’s the rules.</div>';
-    $('new-btn').disabled = true;
+    $('page-body').hidden = true;
+    $('nokey').hidden = false;
   }
 
   // ---------- state ----------
@@ -337,6 +415,8 @@
   var dirty = false;
   var saveTimer = null;
   var saving = false;
+  var myOwner = '';         // this token's owner - used to filter "everyone's scopes"
+  var readOnly = false;     // viewing another owner's scope: no edits, no autosave
 
   // ---------- drafts list ----------
   function fmtWhen(ts){
@@ -379,6 +459,44 @@
     if (el && (ev.key === 'Enter' || ev.key === ' ')){ ev.preventDefault(); openDraft(el.dataset.slug); }
   });
 
+  // ---------- everyone's scopes (read-only) ----------
+  function loadMyOwner(){
+    if (!KEY) return Promise.resolve();
+    return fetch(api('/api/profile')).then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(d){ if (d && d.owner) myOwner = d.owner; }).catch(function(){});
+  }
+
+  function loadAllScopes(){
+    if (!KEY) return;
+    fetch(api('/api/scopes')).then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(d){
+        if (!d) return;
+        var scopes = (d.scopes || []).filter(function(s){ return s.owner !== myOwner; });
+        if (!scopes.length){
+          $('all-scopes').innerHTML = '<div class="empty">Nobody else has started scoping yet.</div>';
+          return;
+        }
+        $('all-scopes').innerHTML = scopes.map(function(s){
+          return '<div class="draft" data-owner="' + esc(s.owner) + '" data-slug="' + esc(s.slug) + '" role="button" tabindex="0">' +
+            '<div><b>' + esc(s.name || s.slug) + '</b>' +
+            '<div class="meta">' + esc(s.owner) + ' · ' + esc(s.slug) +
+              (s.updated ? ' · saved ' + fmtWhen(s.updated) : '') + '</div></div>' +
+            '<span class="pill' + (s.status === 'submitted' ? ' submitted' : '') + '">' + esc(s.status) + '</span>' +
+          '</div>';
+        }).join('');
+      }).catch(function(){});
+  }
+  loadMyOwner().then(loadAllScopes);
+
+  $('all-scopes').addEventListener('click', function(ev){
+    var el = ev.target.closest('.draft');
+    if (el) openScope(el.dataset.owner, el.dataset.slug, true);
+  });
+  $('all-scopes').addEventListener('keydown', function(ev){
+    var el = ev.target.closest('.draft');
+    if (el && (ev.key === 'Enter' || ev.key === ' ')){ ev.preventDefault(); openScope(el.dataset.owner, el.dataset.slug, true); }
+  });
+
   $('new-btn').addEventListener('click', function(){
     var name = $('new-name').value.trim();
     if (!name){ setBanner('Give it a name first — even a bad one.'); $('new-name').focus(); return; }
@@ -397,15 +515,39 @@
   var FW_RADIO = ['teams', 'population', 'police'];
 
   function openDraft(s){
-    fetch(api('/api/scope?slug=' + encodeURIComponent(s)))
-      .then(function(r){ return r.ok ? r.json() : null; })
+    openScope(null, s, false);
+  }
+
+  // owner === null means "my own" (server defaults to the caller); passing
+  // an explicit owner reads someone else's doc read-only - the server
+  // allows any valid token to read any owner's doc, but writes always stay
+  // locked to the caller regardless of what's passed here.
+  function openScope(owner, s, ro){
+    var url = api('/api/scope?slug=' + encodeURIComponent(s)) +
+      (owner ? '&owner=' + encodeURIComponent(owner) : '');
+    fetch(url).then(function(r){ return r.ok ? r.json() : null; })
       .then(function(doc){
-        if (!doc){ setBanner("Couldn't open that draft."); return; }
-        startEditor(doc, true);
+        if (!doc){ setBanner("Couldn't open that scope."); return; }
+        startEditor(doc, true, ro);
       }).catch(function(){ setBanner("Can't reach the scope server."); });
   }
 
-  function startEditor(doc, frozen){
+  // Disable/enable every form control in the editor and hide the bits that
+  // only make sense when you can actually save: the save/submit buttons,
+  // detach buttons and the "load tags" attach flow. Disabled controls never
+  // fire 'input', so this alone also stops autosave from ever kicking in.
+  function setReadOnly(ro){
+    readOnly = ro;
+    document.querySelectorAll('#view-editor input, #view-editor textarea, #view-editor select')
+      .forEach(function(el){ el.disabled = ro; });
+    $('loc-load').style.display = ro ? 'none' : '';
+    $('save-btn').style.display = ro ? 'none' : '';
+    $('submit-btn').style.display = ro ? 'none' : '';
+    $('loc-avail').innerHTML = '';
+    renderAttached();   // redraw so the detach buttons appear/disappear too
+  }
+
+  function startEditor(doc, frozen, ro){
     slug = doc.slug;
     slugFrozen = frozen;
     status = doc.status || 'draft';
@@ -413,7 +555,6 @@
 
     Object.keys(FIELDS).forEach(function(k){ $(FIELDS[k]).value = form[k] || ''; });
     $('f-slug').value = slug;
-    $('f-slug').disabled = slugFrozen;
     $('f-basis').value = form.basis || 'new mode';
 
     var fw = form.framework || {};
@@ -432,6 +573,17 @@
     setSaveState(frozen ? 'saved draft loaded' : 'not saved yet');
     $('ed-eyebrow').textContent = 'Scoping: ' + (form.name || slug) + (status === 'submitted' ? ' (submitted)' : '');
 
+    setReadOnly(!!ro);
+    // Read-only already disables every control; otherwise the slug field
+    // has its own, separate "frozen after first save" disabling.
+    if (!ro) $('f-slug').disabled = slugFrozen;
+    if (ro){
+      $('ro-banner').textContent = '“' + (form.name || slug) + '” — ' + (doc.owner || 'someone') + '’s scope (read-only)';
+      $('ro-banner').hidden = false;
+    } else {
+      $('ro-banner').hidden = true;
+    }
+
     $('view-list').style.display = 'none';
     $('view-editor').style.display = '';
     $('savebar').classList.add('is-show');
@@ -445,6 +597,7 @@
     $('savebar').classList.remove('is-show');
     $('view-list').style.display = '';
     loadDrafts();
+    loadAllScopes();
   }
   $('back-btn').addEventListener('click', closeEditor);
 
@@ -485,7 +638,7 @@
     .forEach(function(el){ el.addEventListener('input', markDirty); });
 
   function save(explicit){
-    if (!KEY || saving) return Promise.resolve(false);
+    if (!KEY || saving || readOnly) return Promise.resolve(false);
     if (!slugFrozen){
       var s = slugify($('f-slug').value || $('f-name').value);
       if (!s){ setBanner('Need a slug before saving — letters and dashes only.'); return Promise.resolve(false); }
@@ -569,11 +722,12 @@
       return;
     }
     el.innerHTML = locations.map(function(t, i){
+      var unlink = readOnly ? '' : '<button class="unlink" type="button" data-i="' + i + '">detach</button>';
       return '<div class="loc">' +
-        '<div class="loc__top"><span class="loc__role">' + esc(t.role) + '</span>' +
-        '<button class="unlink" type="button" data-i="' + i + '">detach</button></div>' +
+        '<div class="loc__top"><span class="loc__role">' + esc(t.role) + '</span>' + unlink + '</div>' +
         '<div class="loc__meta">' + locLine(t) + '</div>' +
         '<input class="control" type="text" maxlength="300" data-note="' + i + '" ' +
+          (readOnly ? 'disabled ' : '') +
           'value="' + esc(t.note || '') + '" placeholder="Label this spot — what is it for?" />' +
       '</div>';
     }).join('');
