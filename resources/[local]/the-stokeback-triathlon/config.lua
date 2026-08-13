@@ -356,9 +356,10 @@ Config = {
     -- The guessing was done with the safety catch on. Grounded legs (see
     -- GROUNDED on the leg configs) snap to the terrain, so a z below is
     -- advisory; most ground points reuse pint-verified Paleto coordinates
-    -- anyway. The air gates are invented outright, at 100-240m over the
-    -- open water of the bay, where the 45m gate radius forgives everything
-    -- except an actual crash.
+    -- anyway. The air gates are invented outright, at 110-180m over the
+    -- flat coastal land around Paleto - never over the sea, by Darren's
+    -- order ("don't do the Tri in water") - where the 45m gate radius
+    -- forgives everything except an actual crash.
     --
     -- The shape, once tagged (copy the commented line, fill in the numbers):
     --
@@ -401,35 +402,47 @@ Config = {
                 -- mountain it used to cross - back along the dune road, then
                 -- west again to the planes, straight through the oncoming
                 -- traffic of everyone still between cp 1 and cp 4.
+                --
+                -- The beach checkpoints sit UP the sand, well clear of the
+                -- surf line (Darren: "don't do the Tri in water") - a 12m
+                -- ring that grazes the sea invites somebody to ride through
+                -- the shallows for the racing line, and a drowned sanchez is
+                -- a slower joke than a dry one.
                 moto = {
                     transition = { name = 'The bikes - on the sand', x = -310.0, y = 6740.0, z = 4.0, h = 0.0 },
                     checkpoints = {
-                        { name = 'moto cp 1 - down the beach',    x = -560.0,  y = 6690.0, z = 4.5 },
-                        { name = 'moto cp 2 - more beach',        x = -790.0,  y = 6590.0, z = 6.0 },
-                        { name = 'moto cp 3 - the far towel',     x = -1030.0, y = 6480.0, z = 5.0 },
+                        { name = 'moto cp 1 - down the beach',    x = -560.0,  y = 6650.0, z = 6.0 },
+                        { name = 'moto cp 2 - more beach',        x = -790.0,  y = 6550.0, z = 7.0 },
+                        { name = 'moto cp 3 - the far towel',     x = -1030.0, y = 6440.0, z = 7.0 },
                         { name = 'moto cp 4 - up the dune',       x = -1150.0, y = 6300.0, z = 20.0 },
                         { name = 'moto cp 5 - the trailhead',     x = -680.0,  y = 5990.0, z = 17.0 },
                         { name = 'moto cp 6 - the dune road',     x = -450.0,  y = 6560.0, z = 15.0 },
                     },
                 },
 
-                -- ~8km, about three minutes: the planes sit on the west
-                -- beach pointing back east down a kilometre of flat sand,
-                -- which is the runway, and nobody is to think about it too
-                -- hard. Take off over the moto leg, climb out past Procopio
-                -- Point, a great lap of the bay over open water, back in
-                -- past Paleto Cove, and a red gate low over the beach to
-                -- finish in front of everyone still running.
+                -- ~6.7km, about three minutes at race pace once the climb
+                -- and the two hairpins have taxed everybody: the planes sit
+                -- on the west beach pointing back east down a kilometre of
+                -- flat sand, which is the runway, and nobody is to think
+                -- about it too hard. The course NEVER leaves land (Darren:
+                -- "don't do the Tri in water. it's well hard" - featureless
+                -- sea gives a pilot no height or speed reference): east over
+                -- the town and the beach road, out along the north coast
+                -- strip with Procopio Point and the coast road underneath
+                -- for reference, a far turn short of Mount Gordo, the long
+                -- run back over the fields, the Paleto farmland, a swoop
+                -- down the coast highway, and a red gate low over the beach
+                -- where a bad landing costs sand, not sea.
                 air  = {
                     transition = { name = 'The planes - west end of the beach', x = -1350.0, y = 6370.0, z = 8.0, h = 295.0 },
                     checkpoints = {
-                        { name = 'air gate 1 - climb-out over the water', x = -350.0,  y = 6900.0, z = 100.0 },
-                        { name = 'air gate 2 - off Procopio Point',       x = 600.0,   y = 7300.0, z = 160.0 },
-                        { name = 'air gate 3 - the far east turn',        x = 1500.0,  y = 7600.0, z = 220.0 },
-                        { name = 'air gate 4 - the top of the lap',       x = 700.0,   y = 8000.0, z = 240.0 },
-                        { name = 'air gate 5 - the long run west',        x = -800.0,  y = 7900.0, z = 220.0 },
-                        { name = 'air gate 6 - the Paleto Cove turn',     x = -2200.0, y = 7350.0, z = 160.0 },
-                        { name = 'air gate 7 - back in over the cove',    x = -1650.0, y = 6800.0, z = 100.0 },
+                        { name = 'air gate 1 - over the beach road',     x = -160.0,  y = 6560.0, z = 110.0 },
+                        { name = 'air gate 2 - Procopio Point',          x = 400.0,   y = 6850.0, z = 130.0 },
+                        { name = 'air gate 3 - the coast road east',     x = 1100.0,  y = 6650.0, z = 150.0 },
+                        { name = 'air gate 4 - the far turn',            x = 1900.0,  y = 6480.0, z = 180.0 },
+                        { name = 'air gate 5 - the long run back',       x = 700.0,   y = 6450.0, z = 150.0 },
+                        { name = 'air gate 6 - the Paleto farmland',     x = -100.0,  y = 6350.0, z = 120.0 },
+                        { name = 'air gate 7 - down the coast highway',  x = -680.0,  y = 5990.0, z = 130.0 },
                     },
                     finish = { name = 'Finish gate - low over the beach', x = -1150.0, y = 6470.0, z = 60.0 },
                 },
