@@ -416,7 +416,19 @@
           var label = g.name + (g.owner && g.owner !== 'sbm' ? ' (' + g.owner + ')' : '');
           return '<option value="' + esc(g.slug) + '">' + esc(label) + '</option>';
         }).join('');
-        $('m-gametype').innerHTML = opts;
+        // General sits first in the list, which made it the silent default —
+        // course tags were landing in it. Preselect the tagger's own
+        // gametype; anyone without one has to pick on purpose.
+        var mine = gametypes.filter(function(g){
+          return d.viewer && g.owner === d.viewer && g.slug !== 'general';
+        });
+        if (mine.length){
+          $('m-gametype').innerHTML = opts;
+          $('m-gametype').value = mine[0].slug;
+        } else {
+          $('m-gametype').innerHTML =
+            '<option value="" disabled selected>— pick a gametype —</option>' + opts;
+        }
         $('tag-filter').innerHTML = '<option value="">All gametypes</option>' + opts;
       }).catch(function(){});
   }
@@ -489,6 +501,11 @@
 
   $('m-save').addEventListener('click', function(){
     if (!snapshot) return;
+    if (!$('m-gametype').value){
+      mStatus.textContent = 'Pick a gametype first — that’s who owns this spot.';
+      mStatus.className = 'status is-show err';
+      return;
+    }
     var btn = $('m-save');
     btn.disabled = true;
     mStatus.textContent = 'Chalking it up…';

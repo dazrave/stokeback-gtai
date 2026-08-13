@@ -398,9 +398,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(fetch_modes())
 
         if route == "/api/gametypes":
-            if self._auth(key) is None:
+            entry = self._auth(key)
+            if entry is None:
                 return
-            return self._json({"gametypes": self.list_gametypes()})
+            # 'viewer' lets the tag page preselect the caller's own gametype
+            # instead of silently defaulting to General (first in the list).
+            return self._json({"gametypes": self.list_gametypes(),
+                               "viewer": entry["owner"]})
 
         if route == "/api/tags":
             if self._auth(key) is None:
