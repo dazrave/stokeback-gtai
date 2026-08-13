@@ -366,7 +366,11 @@ end)
 -- crash and a crash is the worst possible moment to drop twenty milliseconds.
 local witnessAt = 0
 
-function NickWitness(kind)
+-- `loud` waives the line-of-sight half: a big crash or gunfire is HEARD, and
+-- a wall between the witness and the noise does not stop the phone call. The
+-- NPC still has to exist and be in radius - the empty docks stay silent,
+-- which is the entire point of witness-modelling the calls.
+function NickWitness(kind, loud)
     if not Config.witness.ENABLED then return end
     if GetGameTimer() < witnessAt then return end
 
@@ -383,7 +387,7 @@ function NickWitness(kind)
             and #(GetEntityCoords(other) - me) < Config.witness.RADIUS then
             checked = checked + 1
 
-            if HasEntityClearLosToEntity(other, ped, Config.detection.LOS_FLAGS) then
+            if loud or HasEntityClearLosToEntity(other, ped, Config.detection.LOS_FLAGS) then
                 seen = true
                 break
             end
@@ -397,6 +401,80 @@ function NickWitness(kind)
     witnessAt = GetGameTimer() + Config.witness.GAP_S * 1000
     TriggerServerEvent('nick:witness', kind)
 end
+
+-- Gunshots near him get phoned in (heard, never sighted - the 999 still
+-- reports a point, and the server still uses ITS read of where he is). A
+-- copper has to already be within GUNFIRE_RADIUS of him to set one off, so it
+-- cannot be fished for from across the map - but a warning shot to wake the
+-- neighbourhood up is legitimate policing, and honestly quite funny.
+CreateThread(function()
+    while true do
+        Wait(300)
+
+        if isRobber() and Config.witness.GUNFIRE then
+            local me = GetEntityCoords(PlayerPedId())
+
+            for _, id in ipairs(GetActivePlayers()) do
+                if id ~= PlayerId() then
+                    local shooter = GetPlayerPed(id)
+
+                    if DoesEntityExist(shooter) and IsPedShooting(shooter)
+                        and #(GetEntityCoords(shooter) - me) < Config.witness.GUNFIRE_RADIUS then
+                        NickWitness('gunfire', true)
+                        break
+                    end
+                end
+            end
+        else
+            Wait(700)
+        end
+    end
+end)
+
+-- The piloted heli's proximity icon (the scope's own fair-warning trade): a
+-- police helicopter inside HELI_PROXIMITY_ICON_RADIUS shows on the ROBBER'S
+-- map. He is the only one who gets it - it is the counterweight to 250m
+-- eyes, not a gift to the force - and it tracks the machine, so ducking
+-- under cover while the icon slides past is a real play.
+CreateThread(function()
+    local blip = nil
+
+    while true do
+        Wait(2000)
+
+        local near = nil
+
+        if isRobber() then
+            local me = GetEntityCoords(PlayerPedId())
+
+            for _, id in ipairs(GetActivePlayers()) do
+                if id ~= PlayerId() then
+                    local ped = GetPlayerPed(id)
+                    local veh = DoesEntityExist(ped) and GetVehiclePedIsIn(ped, false) or 0
+
+                    if veh ~= 0 and IsThisModelAHeli(GetEntityModel(veh))
+                        and #(GetEntityCoords(veh) - me) < Config.detection.HELI_PROXIMITY_ICON_RADIUS then
+                        near = veh
+                        break
+                    end
+                end
+            end
+        end
+
+        if near and not (blip and DoesBlipExist(blip)) then
+            blip = AddBlipForEntity(near)
+            SetBlipSprite(blip, 64) -- the helicopter glyph
+            SetBlipColour(blip, 1)
+            SetBlipScale(blip, 0.9)
+            BeginTextCommandSetBlipName('STRING')
+            AddTextComponentString('Helicopter')
+            EndTextCommandSetBlipName(blip)
+        elseif not near and blip then
+            if DoesBlipExist(blip) then RemoveBlip(blip) end
+            blip = nil
+        end
+    end
+end)
 
 -- ===== the getaway car's slow public death =====
 -- She coughs, she catches, and then she puts him across a pavement in front of
@@ -446,11 +524,27 @@ CreateThread(function()
                     and drop >= Config.damage.MIN_RAM_DAMAGE then
                     memo.hits = memo.hits + 1
                     ClearEntityLastDamageEntity(vehicle)
+
+                    -- A counted shunt costs ENGINE as well as panels. GTA puts
+                    -- collision damage almost entirely into bodywork, so a car
+                    -- rammed all round the block still pulled like new and the
+                    -- ladder's stutter and STOP never fired - night one's
+                    -- "there's no car health?". This is what makes ramming
+                    -- actually work as the strategy the plan says it is.
+                    local cost = Config.damage.RAM_ENGINE_COST or 0
+                    if cost > 0 and not memo.dead then
+                        SetVehicleEngineHealth(vehicle,
+                            math.max(0.0, GetVehicleEngineHealth(vehicle) - cost))
+                    end
                 end
 
                 -- His own driving counts as damage AND as an incident: put it
                 -- into a bus stop in front of people and somebody phones it in.
-                if drop >= Config.witness.CRASH_DAMAGE then NickWitness('crash') end
+                -- A really big one is HEARD (no line of sight needed): a car
+                -- folding itself round a lamppost is not a subtle noise.
+                if drop >= Config.witness.CRASH_DAMAGE then
+                    NickWitness('crash', drop >= (Config.witness.LOUD_CRASH_DAMAGE or math.huge))
+                end
 
                 memo.bodyHealth = body
 

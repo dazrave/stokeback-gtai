@@ -438,6 +438,16 @@ CreateThread(function()
                     NickHUD.money(purse.onYou or purse.carried or 0),
                     NickHUD.money(purse.stashed or 0), stars)
 
+                -- How she is doing, while he is in her. The ladder runs on
+                -- engine health, so that is the number that gets shown -
+                -- night one taught us damage nobody can SEE reads as damage
+                -- that is not happening ("there's no car health?").
+                local vehicle = GetVehiclePedIsIn(PlayerPedId(), false)
+                if vehicle ~= 0 then
+                    local engine = math.max(0, math.floor(GetVehicleEngineHealth(vehicle) / 10))
+                    line = line .. ('   %sHER %d%%'):format(engine <= 25 and '~r~' or '~w~', engine)
+                end
+
                 -- What the next safehouse run is actually worth. His alone -
                 -- on a police HUD this number would be a live position update
                 -- in disguise, which acceptance test 9 exists to forbid.

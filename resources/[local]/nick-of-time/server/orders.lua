@@ -158,8 +158,26 @@ RegisterNetEvent('nick:witness', function(kind)
     -- The kind only ever changes what the call is CALLED. It must never carry
     -- a direction: a caller who saw a crash gives the police a point on the
     -- map and nothing else, and two points is a bearing they worked out
-    -- themselves (plan §3.4).
-    NickEscalation.witness(NickRound.pos(), kind == 'swap' and 'swap' or 'crash')
+    -- themselves (plan §3.4). Whitelisted, so a modded client cannot invent
+    -- new kinds of emergency.
+    local saw = (kind == 'swap' and 'swap') or (kind == 'gunfire' and 'gunfire') or 'crash'
+    NickEscalation.witness(NickRound.pos(), saw)
+end)
+
+-- Any copper can ask for the air unit; the ration book lives in escalation.
+-- The pad goes back to the REQUESTER only - his client walks the spawn in
+-- when he gets near it - and the approval is announced to the room by the
+-- round's one voice (announce, kind 'airunit').
+RegisterNetEvent('nick:airUnit', function()
+    local src = source
+    if NickRound.phase() ~= 'active' or src == NickRound.robber() then return end
+
+    local pad, why = NickEscalation.requestAirUnit()
+    if not pad then
+        return TriggerClientEvent('nick:radio', src, why or 'no.')
+    end
+
+    TriggerClientEvent('nick:airUnitGo', src, pad)
 end)
 
 -- The robber's client spawns the patrols and the helicopter (it owns the area

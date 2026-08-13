@@ -45,10 +45,15 @@ Config = {
         LOS_GRACE_MS           = 1500, -- unbroken loss before dropping to soft track
         LOS_FLAGS              = 23,   -- world + vehicles + objects
         SOFT_TRACK_DRIFT_DECAY = 0.85, -- how fast heading confidence dies (per second)
-        SOFT_TRACK_GROWTH_MPS  = 12,   -- the search circle swells this fast
-        SOFT_TRACK_COLD_RADIUS = 400,  -- past this the circle is useless: go cold
 
-        HELI_PROXIMITY_ICON_RADIUS = 250, -- (wishlist) the piloted heli's icon
+        -- Slower swell and a later cold call than the draft (12/400): night
+        -- one's verdict was "well too hard to find the robber", and the
+        -- cheapest honest help is a search circle that stays information for
+        -- longer instead of giving up on itself.
+        SOFT_TRACK_GROWTH_MPS  = 10,   -- the search circle swells this fast
+        SOFT_TRACK_COLD_RADIUS = 500,  -- past this the circle is useless: go cold
+
+        HELI_PROXIMITY_ICON_RADIUS = 250, -- the piloted heli's icon on the ROBBER'S map
 
         -- (+) How far a copper can see, borrowed from chase where these
         -- numbers have survived a season of Thursdays. Air range is double
@@ -101,6 +106,14 @@ Config = {
         -- without this the allowance evaporates at the first busy junction.
         MIN_RAM_DAMAGE   = 15.0,
         STUTTER_EVERY_MS = 1800, -- gap between coughs, or it is simply undriveable
+
+        -- (+) What a counted ram costs the ENGINE, out of 1000. GTA puts
+        -- collision damage almost entirely into panels, so a car rammed all
+        -- round the block still had a healthy engine and the ladder's stutter
+        -- and stop never fired - night one's "there's no car health?". This
+        -- is the coupling that makes ramming the strategy the plan says it
+        -- is: seven or so proper shunts and she is done.
+        RAM_ENGINE_COST = 130.0,
 
         -- (+) The plan's ladder, in full: burst/ram -> degrade -> STOP -> pull
         -- out -> foot chase -> tase -> arrest. The "stop" rung was missing;
@@ -173,6 +186,15 @@ Config = {
         -- counter, not loitering on the forecourt.
         ZONE_RADIUS = 4.0,
 
+        -- (+) The SERVER'S slack on that zone, as a multiplier. The server
+        -- reads his position off its own copy of the ped, and OneSync lags
+        -- that copy metres behind a SPRINTING man - which is why night one
+        -- read as "once you've been spotted, no more stealing": chased in at
+        -- a run, the prompt shows (client-true) but the till refuses
+        -- (server-stale). Wide enough to forgive the sprint, still tight
+        -- enough to stop the impossible.
+        START_SLACK = 3.0,
+
         -- (+) The smash-and-grab trade, spelled out. You are through the glass
         -- and filling the bag faster, but half the till is in a drawer you are
         -- never getting into and the bell is already ringing.
@@ -224,6 +246,12 @@ Config = {
         -- bag on the default map's first night. Long enough to be deliberate,
         -- short enough that a man who means it is not stood there feeling silly.
         CALLIT_HOLD_MS = 1500,
+
+        -- (+) Server slack on the stash zone, same disease as the tills
+        -- (looting.START_SLACK): he DIVES into safehouses at a dead run with
+        -- the force behind him, and the server's copy of him is still on the
+        -- pavement. A refused bank at the door is a lost round, not a fair cop.
+        STASH_SLACK = 2.5,
     },
 
     -- ===== escalation =====
@@ -283,6 +311,22 @@ Config = {
         CULLING_RADIUS_AIR = 1200.0,
     },
 
+    -- ===== the air unit =====
+    -- (+) Darren, game night: "I thought we could spawn and pilot our own
+    -- Heli?" - the scope always meant one (manually piloted helicopter, with
+    -- the proximity icon), it just shipped wishlist. Now: any copper types
+    -- /heli and a bird lands on the pad for whoever goes and gets it. No
+    -- magic on board - the air gets SIGHT_AIR_RANGE eyes and nothing else,
+    -- the same LOS rules as the ground, and the robber gets the proximity
+    -- icon (detection.HELI_PROXIMITY_ICON_RADIUS) as his fair warning.
+    airUnit = {
+        ENABLED      = true,
+        MODEL        = 'polmav',
+        COMMAND      = 'heli',
+        PER_ROUND    = 2,     -- ask again after you put the first one in the sea
+        SPAWN_WITHIN = 200.0, -- materialises when its collector gets this close to the pad
+    },
+
     -- ===== witness-modelled incident calls =====
     -- (+) Plan §3.4. A crash only gets phoned in if somebody was actually
     -- there to see it: empty docks at 3am, silence; Vespucci Beach, instant
@@ -291,11 +335,31 @@ Config = {
     -- handout. This is the whole reason the city is left populated.
     witness = {
         ENABLED      = true,
-        RADIUS       = 70.0, -- an NPC this close, with a clear look at him
+        RADIUS       = 80.0, -- an NPC this close, with a clear look at him
         MAX_CHECKED  = 10,   -- peds tested per incident; keep it off the frame budget
         CRASH_DAMAGE = 40.0, -- body health lost in one go to count as a crash
-        DELAY_S      = { 5, 15 }, -- a 999 call takes a moment to reach anyone
-        GAP_S        = 25,   -- at most one call per this, or a bad driver is a tracker
+        DELAY_S      = { 4, 10 }, -- a 999 call takes a moment to reach anyone
+        GAP_S        = 18,   -- at most one call per this, or a bad driver is a tracker
+
+        -- (+) Night one's finding-game retune: RADIUS 70->80, DELAY {5,15}->
+        -- {4,10}, GAP 25->18. More of the city phones things in, faster - the
+        -- calls were so rare and so late that "no 999 calls when crashing"
+        -- was a fair review of a system that technically existed.
+
+        -- (+) LOUD events are HEARD, not seen. A crash this big waives the
+        -- line-of-sight check - a wall between the witness and a car folding
+        -- itself round a lamppost does not stop the phone call. The NPC still
+        -- has to exist and be in RADIUS: the empty docks stay silent.
+        LOUD_CRASH_DAMAGE = 120.0,
+
+        -- (+) Gunfire near him gets phoned in the same way (heard, no LOS).
+        -- The ping still lands on the SERVER'S read of the robber - the
+        -- caller reports "shots around there", not a bearing - and a copper
+        -- must already be this close to him to set one off, so it cannot be
+        -- fished from across the map. Firing a warning shot to make the
+        -- neighbourhood do your job is legitimate policing on this server.
+        GUNFIRE        = true,
+        GUNFIRE_RADIUS = 60.0,
     },
 
     -- ===== auto-GPS =====
@@ -306,7 +370,7 @@ Config = {
     gps = {
         ENABLED            = true,
         HOLD_MS            = 6000,  -- stay on a target at least this long
-        WITNESS_FRESH_S    = 15,    -- a call older than this stops being a lead
+        WITNESS_FRESH_S    = 25,    -- a call older than this stops being a lead
         MANUAL_SUPPRESS_MS = 20000, -- a hand-placed waypoint wins, for a bit
 
         -- (+) The manual half (Darren, game night: "allow a person manual gps
@@ -604,6 +668,14 @@ Config = {
             { name = "Del Perro Heights (the nice flat)",       x = -1447.1, y = -538.3,  z = 34.7,  h = 35.0 },
             { name = "Whispymound Dr drive (Vinewood Hills)",   x = 7.9,     y = 548.1,   z = 175.6, h = 10.0 },
             { name = "The doorway opposite the nick (La Mesa)", x = 826.0,   y = -1290.0, z = 28.2,  h = 180.0 }, -- chase's La Mesa kerb
+        },
+
+        -- Where the air unit lands (/heli). Same made-up-defaults licence as
+        -- the rest of this block. The Mission Row rooftop pad is the single
+        -- most-documented helipad in the game - it is where the stock police
+        -- mav lives. Not on the refusal list: no pad just means /heli says so.
+        helipads = {
+            { name = "Mission Row roof", x = 449.2, y = -981.2, z = 43.7, h = 90.0 },
         },
     },
 

@@ -440,6 +440,64 @@ CreateThread(function()
     end
 end)
 
+-- ===== the piloted air unit =====
+-- Darren, game night: "I thought we could spawn and pilot our own Heli?" -
+-- now you can. /heli asks control; if the ration book allows it, a bird
+-- lands on the pad for whoever goes and gets it. It carries no magic: the
+-- air's only edge is SIGHT_AIR_RANGE through the same LOS rule as the
+-- ground, and the robber gets a proximity icon in exchange (robber.lua).
+RegisterCommand((Config.airUnit and Config.airUnit.COMMAND) or 'heli', function()
+    local role, status = NickState()
+
+    if role ~= 'police' or status.phase ~= 'active' then
+        return NickHUD.notify('~y~No round on, or flying is not your department.')
+    end
+
+    TriggerServerEvent('nick:airUnit')
+end, false)
+
+-- The approval, back to whoever asked. The helicopter is NOT spawned until
+-- its collector is nearly at the pad: OneSync treats an entity created a
+-- long way from its creator as a rumour, and a rumour with rotors is how you
+-- lose an aircraft before anyone has sat in it.
+RegisterNetEvent('nick:airUnitGo', function(pad)
+    local role = NickState()
+    if role ~= 'police' or not pad then return end
+
+    NickHUD.notify(('~b~Air unit approved.~w~ She lands on the pad at %s - go and get her.')
+        :format(pad.name or 'the pad'))
+
+    CreateThread(function()
+        local deadline = GetGameTimer() + 240000 -- takes too long and the offer lapses
+
+        while GetGameTimer() < deadline do
+            Wait(1000)
+
+            local role2, status = NickState()
+            if role2 ~= 'police' or status.phase ~= 'active' then return end
+
+            if #(GetEntityCoords(PlayerPedId()) - vector3(pad.x, pad.y, pad.z))
+                < ((Config.airUnit and Config.airUnit.SPAWN_WITHIN) or 200.0) then
+                local hash = SBM.loadModel((Config.airUnit and Config.airUnit.MODEL) or 'polmav')
+                if not hash then return end
+
+                RequestCollisionAtCoord(pad.x, pad.y, pad.z)
+
+                local heli = CreateVehicle(hash, pad.x, pad.y, pad.z + 1.0, pad.h or 0.0, true, true)
+                SetModelAsNoLongerNeeded(hash)
+                if not DoesEntityExist(heli) then return end
+
+                SetVehicleOnGroundProperly(heli)
+                fleet.track(heli)   -- swept with the cruisers at the whistle
+                NickReportCar(heli) -- and by the server if this client vanishes
+
+                NickHUD.notify('~b~She is on the pad.~w~ Mind the wires.')
+                return
+            end
+        end
+    end)
+end)
+
 -- OneSync culls distant players out of existence client-side, which would make
 -- a helicopter's whole job impossible - it would be flying over an empty city.
 -- The server hands airborne police a bigger bubble; this is the only thing

@@ -282,8 +282,16 @@ local function announce(events)
 
         elseif event.kind == 'witness' then
             TriggerClientEvent('nick:ping', -1, 'witness', event,
-                event.saw == 'swap' and 'Witness - changed cars here' or 'Witness - collision here')
+                event.saw == 'swap' and 'Witness - changed cars here'
+                or event.saw == 'gunfire' and 'Witness - shots fired here'
+                or 'Witness - collision here')
             radio(Config.flavour.RADIO_WITNESS)
+
+        elseif event.kind == 'airunit' then
+            -- The approval is public - a helicopter is not a secret for long,
+            -- and the robber hearing it is half of what he pays star money for.
+            tell(('Air unit approved - landing on the pad at %s. Somebody go and fly it.')
+                :format(event.name or 'the pad'))
 
         elseif event.kind == 'heli' then
             radio(Config.flavour.RADIO_HELI_UP)

@@ -281,7 +281,16 @@ function NickHeist.startJob(index, method, pos)
 
     local site = state.sites[index]
     if not site then return false, 'no such place' end
-    if not pos or distance(pos, site) > L.ZONE_RADIUS * 2.0 then return false, 'not there' end
+
+    -- START_SLACK, not the old flat 2x: the server's copy of a SPRINTING ped
+    -- lags metres behind the truth, so a robber chased into a shop at a run
+    -- pressed E on a prompt his client could see and got refused by a server
+    -- that still had him on the pavement. That refusal - quiet, and only
+    -- ever when he arrived at speed - is what night one read as "once
+    -- you've been spotted, no more stealing".
+    if not pos or distance(pos, site) > L.ZONE_RADIUS * (L.START_SLACK or 2.0) then
+        return false, 'not at the till yet - one more step'
+    end
     if site.left <= 0 then return false, ('%s is cleaned out'):format(site.name) end
 
     local smash = method == 'smash'
@@ -314,7 +323,13 @@ end
 function NickHeist.stash(index, pos)
     local house = state.houses[index]
     if not house then return false, 'no such place' end
-    if not pos or distance(pos, house) > S.ZONE_RADIUS * 1.5 then return false, 'not there' end
+
+    -- STASH_SLACK for the same OneSync lag the tills forgive (startJob): he
+    -- dives into these doorways at a dead run, and a bank refused because the
+    -- server still had him on the pavement is a lost round, not a fair cop.
+    if not pos or distance(pos, house) > S.ZONE_RADIUS * (S.STASH_SLACK or 1.5) then
+        return false, 'not through the door yet'
+    end
     if state.carried <= 0 then return false, 'nothing in the bag' end
 
     local banked = state.carried
