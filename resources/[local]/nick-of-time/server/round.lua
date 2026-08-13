@@ -1,0 +1,439 @@
+-- Round director. The server owns the phase, the clock, who the robber is and
+-- what the police are told; clients own eyes, wheels and the bag prompts.
+--
+-- The world plumbing belongs to the gametype framework (core/server/
+-- gametype.lua): claiming the city, muting NPC heat, the dusk clock, friendly
+-- fire and the /nick command itself all come off the descriptor at the bottom
+-- of this file. What lives here is the drama - the rota, the endings, and the
+-- one voice that announces things.
+local state = {
+    phase      = 'idle', -- idle | setup | active
+    robber     = nil,    -- server id
+    robberName = nil,
+    startsAt   = 0,
+    endsAt     = 0,
+    lastTick   = 0,
+    pos        = nil,    -- the robber's own heartbeat; never published as-is
+}
+
+local function setState(next)
+    local merged = {}
+    for key, value in pairs(state) do merged[key] = value end
+    for key, value in pairs(next) do merged[key] = value end
+    state = merged
+end
+
+-- Said in chat AND printed. The console line matters: the map gate below is
+-- the first thing anyone runs on a fresh clone, usually from the server
+-- console with nobody connected, and a message only players can see would be
+-- shouted into an empty room.
+local function tell(message)
+    TriggerClientEvent('chat:addMessage', -1, {
+        color = { 245, 200, 66 },
+        args  = { 'nick', message },
+    })
+    print('[nick] ' .. message)
+end
+
+-- ===== whose turn it is =====
+-- Everyone takes a turn as the robber; nobody goes twice on the bounce. The
+-- memory lives on disk (server/session.lua) because PUSH LIVE restarts this
+-- resource several times an evening and an in-memory rota is a coin toss
+-- wearing a rota's clothes.
+local function nextRobber(players)
+    local roster = {}
+    for _, src in ipairs(players) do
+        local id = tonumber(src)
+        if id then roster[#roster + 1] = { id = id, name = GetPlayerName(id) } end
+    end
+
+    if #roster == 0 then return nil end
+    table.sort(roster, function(a, b) return a.id < b.id end)
+
+    local previous = NickSession.lastRobber()
+    local at = nil
+
+    for index, player in ipairs(roster) do
+        if player.name == previous then at = index break end
+    end
+
+    -- Nobody here went last (first round of the night, or they have left):
+    -- draw at random rather than always opening with the lowest server id.
+    local pick = at and roster[(at % #roster) + 1] or roster[math.random(#roster)]
+
+    NickSession.rememberRobber(pick.name)
+    return pick.id
+end
+
+-- ===== the map gate =====
+-- Zero coordinates are tagged and a coordinate may never be guessed, so the
+-- mode ships complete and refuses to deal until the tag board has caught up.
+local function refuseUntagged(gaps)
+    tell('Not yet - Nick of Time has no map. Nothing on this list is tagged:')
+
+    for _, gap in ipairs(gaps) do
+        tell(('  %s: %d tagged, need %d to play (%d for the real thing) - %s'):format(
+            gap.label, gap.have, gap.min, gap.want, gap.tag))
+    end
+
+    tell('Tag them at https://sbm.dazrave.uk/tag under gametype "nick-of-time", then /nick start.')
+end
+
+-- ===== the round, as the framework sees it =====
+
+-- OnStart. The framework has already claimed the world, muted NPC heat, set
+-- the dusk clock and dealt everyone onto 'police' by the time this runs.
+local function onStart()
+    local gaps = NickSession.missing()
+    if #gaps > 0 then
+        refuseUntagged(gaps)
+        return exports.core:EndGametype('untagged')
+    end
+
+    local players = GetPlayers()
+    if #players < Config.round.MIN_PLAYERS then
+        tell(('Need %d in the server: one robber and someone to chase him.'):format(
+            Config.round.MIN_PLAYERS))
+        return exports.core:EndGametype('short-handed')
+    end
+
+    local robber = nextRobber(players)
+    local now    = GetGameTimer()
+
+    NickDetect.reset()
+    NickHeist.begin()
+
+    -- The rota's pick moves over by hand - the 'robber' team is assign=false,
+    -- so the framework's deal never touches it. Cross-team friendly fire then
+    -- gives exactly the round we want: tyres pop, the robber takes hits, and
+    -- the law cannot wing each other.
+    exports.core:SetTeam(robber, 'robber')
+
+    -- A fresh table, NOT setState: a key written as nil in a constructor is
+    -- simply absent, so a merge would quietly keep last round's values.
+    state = {
+        phase      = 'setup',
+        robber     = robber,
+        robberName = GetPlayerName(robber),
+        startsAt   = now + Config.round.READY_S * 1000,
+        endsAt     = now + (Config.round.READY_S + Config.round.ROUND_LENGTH_S) * 1000,
+        lastTick   = now,
+        pos        = nil,
+    }
+
+    -- Seeded once per session and reused identically every round: the scope's
+    -- fairness requirement is that nobody's turn gets an easier city.
+    local robberSpawn = NickSession.pick(Config.locations.robberSpawns, 1, 7)[1]
+    local copSpawn    = NickSession.pick(Config.locations.copSpawns, 1, 13)[1]
+
+    local firstCop = nil
+    for _, src in ipairs(players) do
+        local id = tonumber(src)
+        if id ~= robber and not firstCop then firstCop = id end
+    end
+
+    local map = NickHeist.map()
+
+    CreateThread(function()
+        Wait(1500) -- let the teams land before anyone gets moved
+
+        for _, src in ipairs(players) do
+            local id       = tonumber(src)
+            local isRobber = (id == robber)
+
+            TriggerClientEvent('nick:role', id, {
+                isRobber   = isRobber,
+                robberId   = robber,
+                robberName = state.robberName,
+                spawn      = isRobber and robberSpawn or copSpawn,
+                spawnFleet = (id == firstCop), -- exactly one client spawns the cars
+            })
+
+            -- The police get the shops (guessing which one he hits next is
+            -- half their job) and nothing else. The safehouses are the
+            -- robber's business until he uses one.
+            TriggerClientEvent('nick:map', id, {
+                sites  = map.sites,
+                houses = isRobber and map.houses or nil,
+            })
+        end
+    end)
+
+    tell(('%s is on the rob. Ten minutes. Everyone else is the law.'):format(state.robberName))
+    tell('Only what he gets through a safehouse door counts. Everything in the bag when you nick him is gone.')
+end
+
+-- The events heist.lua queued up, turned into things people can see.
+local function announce(events)
+    for _, event in ipairs(events) do
+        if event.kind == 'alarm' then
+            TriggerClientEvent('nick:ping', -1, 'alarm', event, ('Alarm - %s'):format(event.name or 'a shop'))
+            tell(('999: alarm going off at %s.'):format(event.name or 'a shop'))
+
+        elseif event.kind == 'stash' then
+            -- Banking is loud. The safehouse he just used is on their map now,
+            -- which is the price of turning a bag into a score.
+            TriggerClientEvent('nick:ping', -1, 'stash', event, ('Stash spotted - %s'):format(event.name or 'a doorway'))
+            tell('Word is he just dropped a bag off somewhere. That door is burned.')
+
+        elseif event.kind == 'exit' and event.reason == 'empty' and state.robber then
+            TriggerClientEvent('nick:purseNote', state.robber, ('%s is cleaned out.'):format(event.name or 'The shop'))
+        end
+    end
+end
+
+-- OnTick, ~1Hz from the framework while the round is live.
+local function onTick()
+    if state.phase == 'idle' then return end
+
+    local now = GetGameTimer()
+    local dt  = math.max(0.1, (now - state.lastTick) / 1000.0)
+    setState({ lastTick = now })
+
+    if state.phase == 'setup' and now >= state.startsAt then
+        setState({ phase = 'active' })
+        TriggerClientEvent('nick:go', -1)
+        tell('He is out there. Find him.')
+    end
+
+    -- The guess moves on whether anyone is looking or not. This is the whole
+    -- mode: doubling back behind a building sends the circle the wrong way.
+    NickDetect.tick(dt)
+    NickHeist.tick(state.pos, dt)
+    announce(NickHeist.drain())
+
+    local remaining = math.max(0, math.ceil((state.endsAt - now) / 1000))
+    local leader    = NickSession.leader()
+    local mine      = state.robberName and NickSession.totalFor(state.robberName) or 0
+
+    local status = NickDetect.publish()
+    status.phase       = state.phase
+    status.remaining   = remaining
+    status.robberId    = state.robber
+    status.robberName  = state.robberName
+    status.publicTaken = NickHeist.publicTaken()
+    status.stars       = NickHeist.stars()
+
+    -- The number that makes a spectator sport of it. Everyone sees it, which
+    -- is the point: the room knows how badly it is going before he does.
+    if Config.round.SHOW_DELTA_TO_COPS and leader then
+        status.leader = leader
+        status.delta  = leader.total - (mine + NickHeist.stashed())
+    end
+
+    TriggerClientEvent('nick:status', -1, status)
+
+    -- His own numbers go to him and to nobody else: a carried total on a
+    -- police HUD would be a live position update in disguise.
+    if state.robber then
+        TriggerClientEvent('nick:purse', state.robber, NickHeist.purse())
+    end
+
+    if remaining <= 0 then exports.core:EndGametype('time') end
+end
+
+-- Everybody back into the world everyone else is in. A player left behind in
+-- the safehouse bucket would be invisible for the rest of the evening, which
+-- is the single worst bug this mode could ship.
+local function unvanishAll()
+    for _, src in ipairs(GetPlayers()) do
+        local id = tonumber(src)
+        if id then SetPlayerRoutingBucket(id, 0) end
+    end
+end
+
+-- OnEnd. Every road out of a round comes through here, whatever ended it.
+local function onEnd(reason)
+    -- The two non-rounds, handled before anything else: onStart refused before
+    -- a round existed, so there is no state to tear down. Take the world claim
+    -- back immediately rather than leaving infected and pint stopped for the
+    -- framework's eight second end-card grace over a round that never was.
+    if reason == 'untagged' or reason == 'short-handed' then
+        exports.core:releaseWorld()
+        return 'hold'
+    end
+
+    if state.phase == 'idle' then return end
+
+    -- The framework's own reasons translated into this mode's endings. Its
+    -- round cap trails ours by a few seconds (onTick calls time first).
+    local FRAMEWORK_REASONS = { time = 'time', stopped = 'abandoned' }
+    local result = FRAMEWORK_REASONS[reason] or reason
+
+    local stashed = NickHeist.stashed()
+    local name    = state.robberName
+
+    setState({ phase = 'idle' })
+    unvanishAll()
+
+    -- Torn down by force (this resource or core going down): no drama, just
+    -- make sure the next registration starts from idle.
+    if reason == 'resource-stopped' or reason == 'core-stopped' then return end
+
+    if name then NickSession.record(name, stashed) end
+
+    TriggerClientEvent('nick:end', -1, result, name, stashed)
+
+    local lines = {
+        arrested   = ('%s got nicked. Everything in the bag goes back on the shelf. Banked: £%s.'):format(name or '?', stashed),
+        ['called-it'] = ('%s called it a day and walked away with £%s.'):format(name or '?', stashed),
+        time       = ('Ten minutes gone. %s banked £%s and is still holding whatever he never stashed - which is now nobody\'s.'):format(name or '?', stashed),
+        fled       = ('%s left the server mid-job. The perfect crime, technically.'):format(name or '?'),
+        abandoned  = 'Round abandoned.',
+    }
+    tell(lines[result] or 'Round over.')
+
+    local leader = NickSession.leader()
+    if leader then
+        tell(('Session leader: %s on £%s.'):format(leader.name, leader.total))
+    end
+end
+
+-- ===== what the clients tell us =====
+
+-- A copper laid eyes on him. Straight into the detector: this is the only
+-- thing in the whole mode that produces the truth.
+RegisterNetEvent('nick:see', function(coords)
+    local src = source
+    if state.phase ~= 'active' or src == state.robber then return end
+    if type(coords) ~= 'table' and type(coords) ~= 'vector3' then return end
+
+    NickDetect.sighting(coords)
+end)
+
+-- The robber's own position, once a second. Used for the drain, the stash and
+-- the dive - never published. The police only ever get it by looking.
+RegisterNetEvent('nick:heartbeat', function(coords)
+    local src = source
+    if src ~= state.robber then return end
+    setState({ pos = { x = coords.x, y = coords.y, z = coords.z } })
+end)
+
+RegisterNetEvent('nick:job', function(index, method)
+    local src = source
+    if state.phase ~= 'active' or src ~= state.robber then return end
+
+    local ok, why = NickHeist.startJob(tonumber(index) or 0, method, state.pos)
+    if not ok then
+        TriggerClientEvent('nick:purseNote', src, why or 'not happening')
+    end
+end)
+
+RegisterNetEvent('nick:stash', function(index)
+    local src = source
+    if state.phase ~= 'active' or src ~= state.robber then return end
+
+    local ok, banked = NickHeist.stash(tonumber(index) or 0, state.pos)
+    if ok then
+        TriggerClientEvent('nick:banked', src, banked)
+    else
+        TriggerClientEvent('nick:purseNote', src, banked or 'not happening')
+    end
+end)
+
+-- "Call it a day": stood inside a safehouse, he can stop the round himself
+-- and keep what he has banked. The nerve of leaving £4,000 in the bag to do
+-- it is the joke.
+RegisterNetEvent('nick:callItADay', function()
+    local src = source
+    if state.phase ~= 'active' or src ~= state.robber then return end
+    exports.core:EndGametype('called-it')
+end)
+
+RegisterNetEvent('nick:arrest', function()
+    local src = source
+    if state.phase ~= 'active' or src == state.robber then return end
+
+    TriggerEvent('core:stat', src, 'arrests', 1) -- season scoreboard
+    exports.core:EndGametype('arrested')
+end)
+
+-- The dive. A routing bucket is the only way a player genuinely disappears
+-- rather than merely being hard to see - the whole force can drive through
+-- the doorway and never know. Granted by the server so a client cannot decide
+-- to be invisible on the open road.
+RegisterNetEvent('nick:vanish', function(hidden)
+    local src = source
+    if src ~= state.robber then return end
+    if state.phase ~= 'active' and hidden then return end
+
+    SetPlayerRoutingBucket(src, hidden and Config.safehouses.HIDDEN_BUCKET or 0)
+end)
+
+exports('getState', function()
+    return {
+        phase   = state.phase,
+        robber  = state.robberName,
+        contact = NickDetect.contact(),
+        stashed = NickHeist.stashed(),
+    }
+end)
+
+AddEventHandler('onResourceStop', function(resource)
+    if resource ~= GetCurrentResourceName() then return end
+    unvanishAll()
+end)
+
+-- ===== the declaration =====
+-- Registered on every start of this resource AND of core: a core reboot wipes
+-- the framework's registry, and a mode that doesn't put its hand back up
+-- stops existing as far as /nick is concerned.
+local function register()
+    if state.phase ~= 'idle' then
+        setState({ phase = 'idle' })
+        unvanishAll()
+        tell('Core rebooted mid-round - round abandoned. /nick start to go again.')
+    end
+
+    exports.core:RegisterGametype('nick', {
+        label = 'Nick of Time',
+
+        -- Everyone is dealt onto 'police'; onStart moves the rota's pick to
+        -- 'robber' by hand. No team loadouts here - client/police.lua issues
+        -- the kit, so the robber never gets one by accident.
+        teams = {
+            { id = 'police', label = 'The Law' },
+            { id = 'robber', label = 'The Robber', assign = false },
+        },
+
+        population   = 'alive',  -- a living city to hide in and to nick cars out of
+        -- 'off', not 'custom': night one has no AI police at all. The
+        -- escalation block in config.lua (AI cars per star, the relay, the
+        -- roadblocks) is the next build, and it flips this to 'custom'.
+        police       = 'off',
+        friendlyFire = 'auto',   -- cross-team only: tyres pop, coppers can't wing each other
+
+        clock = Config.round.CLOCK,
+
+        -- Backstop only: onTick calls time on its own clock, which starts
+        -- when everyone has actually been placed. This cap exists so a wedged
+        -- round can never run forever.
+        roundSeconds = Config.round.READY_S + Config.round.ROUND_LENGTH_S + 15,
+
+        -- 0, not two, on purpose. The framework's floor would refuse before
+        -- the map gate could speak, and "here is what to tag" is an answer you
+        -- want from an empty console on a Tuesday, not from a full lobby on a
+        -- Thursday. onStart enforces Config.round.MIN_PLAYERS itself.
+        minPlayers = 0,
+
+        -- Respawn is role-dependent (a copper gets up where they fell, the
+        -- robber's round ends by arrest or by clock), so client/police.lua
+        -- sets the policy per role rather than declaring one here.
+        hooks = {
+            OnStart = onStart,
+            OnTick  = onTick,
+            OnEnd   = onEnd,
+            OnPlayerLeave = function(src)
+                if state.phase ~= 'idle' and src == state.robber then
+                    exports.core:EndGametype('fled')
+                end
+            end,
+        },
+    })
+end
+
+AddEventHandler('onResourceStart', function(resource)
+    if resource == GetCurrentResourceName() or resource == 'core' then
+        register()
+    end
+end)

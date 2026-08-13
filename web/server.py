@@ -34,7 +34,7 @@ MAX_NAME = 40
 RATE_MAX = 6                 # submissions...
 RATE_WINDOW = 3600           # ...per IP per hour
 
-MODES = {"any", "infected", "pint", "chase", "squadmate", "new-mode"}
+MODES = {"any", "infected", "pint", "chase", "squadmate", "nick-of-time", "new-mode"}
 
 CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 

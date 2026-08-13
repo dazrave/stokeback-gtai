@@ -7,7 +7,8 @@ the change the words literally describe.
 
 Issues are labelled on three axes: a **type** (`new-mode`, `enhance`, `feature`,
 `balance`, `bug`, `chore`), a **mode** (`mode:infected`, `mode:pint`,
-`mode:chase`, `mode:squadmate`, `mode:meta`), and a **handling** label. Only pick
+`mode:chase`, `mode:squadmate`, `mode:nick-of-time`, `mode:meta`), and a
+**handling** label. Only pick
 up `auto`; leave `needs-human` and `unclear` for a person. `scoped` on a
 `new-mode` issue means a human already did the design — the spec lives in
 `docs/modes/`, and its decomposed child issues labelled `auto` are fair game.
@@ -19,8 +20,9 @@ mates. It is a comedy, not a serious server. The tone is **Shaun of the Dead**: 
 apocalypse, a getaway van that runs out of petrol at the worst moment. Jokes in
 the chat lines are correct and expected.
 
-There are four modes and one companion — read the [README](README.md) for what
-each one is before touching it.
+There are five modes and one companion — read the [README](README.md) for what
+each one is before touching it. `nick-of-time` is the newest and ships without
+a single coordinate: it refuses to start until the tag board has them.
 
 ## How to behave
 
@@ -66,6 +68,13 @@ you touch logic. The levers:
 | line-of-sight tracking & search radius | `chase/config.lua` → `sight`, `search` |
 | fugitive lethality, AI police, fleet | `chase/config.lua` → `nonLethal`, `ai`, `cop` |
 | squadmate accuracy, health, weapon | `squadmate/config.lua` → `bot` |
+| how fast the robber is lost / the search circle drifts | `nick-of-time/config.lua` → `detection` |
+| shop takings, alarm timers, smash-vs-quiet trade | `nick-of-time/config.lua` → `looting` |
+| the safehouse dive & what banking costs | `nick-of-time/config.lua` → `safehouses` |
+| police speed help on a long straight | `nick-of-time/config.lua` → `banding` |
+| the getaway car's cough, fire and fireball | `nick-of-time/config.lua` → `damage` |
+| stars, alarms-per-stash, roadblocks (unbuilt) | `nick-of-time/config.lua` → `escalation` |
+| where the shops, safehouses and spawns are | `nick-of-time/config.lua` → `locations` (tag board only, never guessed) |
 
 A new mission or vignette is **data**: add an entry, don't write a new system.
 

@@ -73,6 +73,29 @@ One fugitive in a car, everyone else is police. Ten minute rounds.
 - Endings: **clean getaway**, **nicked** (stand over them and cuff them), or
   wrapping the bike round a lamppost.
 
+### 💰 `nick-of-time` — one robber, everyone else is the law
+
+Ten minutes. He loots the shops; only what he physically carries through a
+safehouse door counts, and everything in the bag when you nick him goes back on
+the shelf.
+
+- **Three-state detection.** A copper with eyes on him is the *only* source of
+  truth. Lose him and the dot keeps going the way he was last seen going,
+  slowing as the guess ages, with the search circle swelling around it —
+  so doubling back behind a building sends the whole force the wrong way.
+  Let the circle get big enough and it goes **cold**: nothing on the map at all.
+- **Smash-and-grab or quiet entry.** Through the glass is faster but the bell
+  rings immediately and half the till is in a drawer you're never getting into.
+  Quiet is the full stock and an alarm timer you can't see running.
+- **The dive.** Get into a safehouse doorway unseen and you genuinely vanish —
+  routing bucket, not a hiding animation — while the entire force screams past.
+- **The car dies in public.** It coughs at 10% engine health, catches fire after
+  two more shunts, and puts you across a pavement six seconds later.
+- Endings: **nicked**, **called it a day** inside a safehouse, or the clock.
+
+Ships **without a single coordinate**: `/nick start` tells you exactly which
+locations still need tagging on the tag board.
+
 ### 🤖 `squadmate` — your AI mate
 
 One AI companion each. Follow, hold, be aggressive, copy your weapon, or fetch a
@@ -93,6 +116,7 @@ Type them in chat with a `/`, or in the F8 console without one.
 /horde start | stop | reset                        sandbox wave survival
 /wave [n]                                           force the next wave, or jump to wave n
 /chase start | stop                                 one fugitive, everyone else is police
+/nick start | stop                                  Nick of Time: rob the shops, stash it, get out
 /score                                              horde kill leaderboard
 /resetgame                                          stop everything, respawn everyone somewhere random, together
 ```
@@ -131,6 +155,7 @@ resources/[local]/
 ├── infected/      the horde: spawning, behaviour, waves, carjacking
 ├── pint/          the campaign: missions, fuel, moments, revives
 ├── chase/         cops and robbers: sight tracking, AI police, reports
+├── nick-of-time/  the heist: loot drain, alarms, the drifting search circle
 ├── squadmate/     the AI companion
 ├── infected_dev/  dev tools (god, noclip, wave control) — off for game night
 └── telemetry/     route recording, player list, /resetgame

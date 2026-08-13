@@ -27,6 +27,7 @@ body:
         - "infected — the horde"
         - "pint — the campaign"
         - "chase — cops and robbers"
+        - "nick-of-time — the heist"
         - "squadmate — the AI mate"
         - "meta — telemetry, tooling, repo"
     validations:

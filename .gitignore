@@ -16,3 +16,7 @@ web/submissions/
 
 # Written by chase/server/round.lua on the live server: whose turn it was.
 resources/[local]/chase/.last-fugitive
+
+# Written by nick-of-time/server/session.lua on the live server: the session
+# seed, the scoreboard and whose turn it was.
+resources/[local]/nick-of-time/.session
