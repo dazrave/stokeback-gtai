@@ -28,6 +28,23 @@ function TriState()
     return state
 end
 
+-- Is there dry ground at this column? The ground probe alone cannot say:
+-- over water it answers with the SEABED, because water is not ground -
+-- which is exactly how a race vehicle ends up parked under the surf
+-- (Darren watched the bike line-up fed to the tide one bay at a time).
+-- Everything that PLACES something - the start line pegs here, the
+-- garage's vehicle bays - asks this first, per position, at spawn time,
+-- so no tag, tonight's or a future one, can ever put a racer or a
+-- vehicle below the waterline. Shared through the script environment
+-- because a resource cannot call its own exports.
+function TriDry(x, y, z)
+    local foundWater, water = GetWaterHeightNoWaves(x, y, z + 25.0)
+    if not foundWater then return true end
+
+    local foundGround, ground = GetGroundZFor_3dCoord(x, y, z + 25.0, false)
+    return ((foundGround and ground) or z) > water
+end
+
 TriHUD = {}
 TriHUD.notify = SBM.notify
 TriHUD.shard  = SBM.shard
@@ -64,6 +81,12 @@ local function placeOnLine(start, slot, field)
     local rx, ry = math.cos(rad), math.sin(rad)
 
     local from = ((slot or 1) - (((field or 1) + 1) / 2)) * (Config.vehicles.SLOT_SPACING or 6.0) * 0.5
+
+    -- A peg that lands in the surf collapses toward the tag: a crowded
+    -- start line beats a swimmer on it.
+    while math.abs(from) > 0.5 and not TriDry(start.x + rx * from, start.y + ry * from, start.z) do
+        from = from * 0.5
+    end
 
     SetEntityCoords(ped, start.x + rx * from, start.y + ry * from, start.z, false, false, false, false)
     SetEntityHeading(ped, start.h or 0.0)

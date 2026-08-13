@@ -33,6 +33,15 @@ end
 -- Puts a vehicle down flat on the ground. Creating one at a tagged height
 -- drops it in and GTA happily lands it on its roof.
 local function placeOnGround(hash, x, y, z, heading)
+    -- The last line of the water defence (TriDry, client/main.lua): whatever
+    -- upstream let a wet position through, no vehicle is ever CREATED below
+    -- the waterline. Refusing leaves the racer's retry loop asking again,
+    -- which is a nuisance; a submerged sanchez is a retirement.
+    if not TriDry(x, y, z) then
+        print(('[tri] refused to spawn a vehicle in the sea at %.1f, %.1f - move that tag inland'):format(x, y))
+        return nil
+    end
+
     RequestCollisionAtCoord(x, y, z)
 
     -- The probe takes the FIRST surface going down, which next to a building
@@ -69,12 +78,24 @@ local function placeAtBay(hash, grant, base)
         and (Config.vehicles.AIR_SPACING or 22.0)
         or  (Config.vehicles.SLOT_SPACING or 6.0)
 
-    local rad  = math.rad(base.h or 0.0)
-    local from = ((grant.slot or 1) - 1) * spacing
+    local rad    = math.rad(base.h or 0.0)
+    local dx, dy = math.cos(rad), math.sin(rad)
+    local from   = ((grant.slot or 1) - 1) * spacing
+
+    -- The bay fan walks at (cos h, sin h) from the anchor, and nothing
+    -- guarantees a tagged heading keeps that walk out of the sea - the
+    -- first Paleto line-up pointed its fan north and fed the bikes to the
+    -- tide one bay at a time. A bay that resolves wet retreats down the
+    -- fan toward the anchor until it finds dry ground; two bikes sharing
+    -- a bay is a better joke than one bike underwater. A wet ANCHOR is
+    -- placeOnGround's refusal to make.
+    while from > 0 and not TriDry(base.x + dx * from, base.y + dy * from, base.z) do
+        from = math.max(0, from - spacing * 0.5)
+    end
 
     return placeOnGround(hash,
-        base.x + math.cos(rad) * from,
-        base.y + math.sin(rad) * from,
+        base.x + dx * from,
+        base.y + dy * from,
         base.z, base.h or 0.0)
 end
 

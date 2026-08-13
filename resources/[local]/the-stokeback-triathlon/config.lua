@@ -393,11 +393,13 @@ Config = {
             start = { name = 'Start line - the Paleto pub', x = -292.0, y = 6256.0, z = 31.4, h = 0.0 },
 
             legs  = {
-                -- ~590m, call it a minute and a half of wheezing: up the
-                -- street, over the town's west fields to the dune road, then
-                -- along the beach road west to the bikes. Every point is a
-                -- pint-verified street or road spot at z 15-32 - the leg
-                -- looks at the sea the whole way and never goes near it.
+                -- ~740m, call it a minute and three-quarters of wheezing: up
+                -- the street, over the town's west fields to the dune road,
+                -- along the beach road west, then the last stretch to the
+                -- bikes at the top of the beach. Over the minute target, but
+                -- every point is a pint-verified street or road spot at
+                -- z 15-32 and the bikes now sit on proven-dry ground - the
+                -- extra 150m of wheezing is the price of nobody swimming.
                 run  = {
                     checkpoints = {
                         { name = 'run cp 1 - up the street',      x = -275.0, y = 6330.0, z = 32.0 },
@@ -419,14 +421,22 @@ Config = {
                 -- choice rather than a requirement. The old beach-line
                 -- checkpoints at z 4-8 were where the ground probe could
                 -- answer with seabed; nothing here sits below z 15.
+                --
+                -- The transition anchor is a spot pint verifiably spawned a
+                -- CAR on, and its heading is chosen for the bay fan, not the
+                -- view: bays walk at (cos h, sin h) from the anchor, so
+                -- h=270 sends the line due SOUTH, directly away from the
+                -- sea, with the bikes facing east. The first line-up here
+                -- pointed its fan north and fed the bikes to the tide one
+                -- bay at a time - Darren watched it happen.
                 moto = {
-                    transition = { name = 'The bikes - the dune road', x = -660.0, y = 6470.0, z = 16.0, h = 109.0 },
+                    transition = { name = 'The bikes - top of the beach', x = -800.0, y = 6420.0, z = 15.0, h = 270.0 },
                     checkpoints = {
-                        { name = 'moto cp 1 - the west dune',        x = -1150.0, y = 6300.0, z = 20.0 },
-                        { name = 'moto cp 2 - the trailhead',        x = -680.0,  y = 5990.0, z = 17.0 },
-                        { name = 'moto cp 3 - the east fields',      x = -90.0,   y = 6420.0, z = 31.5 },
-                        { name = 'moto cp 4 - the dune road again',  x = -450.0,  y = 6560.0, z = 15.0 },
-                        { name = 'moto cp 5 - back along the top',   x = -800.0,  y = 6420.0, z = 15.0 },
+                        { name = 'moto cp 1 - the west dune',           x = -1150.0, y = 6300.0, z = 20.0 },
+                        { name = 'moto cp 2 - the trailhead',           x = -680.0,  y = 5990.0, z = 17.0 },
+                        { name = 'moto cp 3 - the east fields',         x = -90.0,   y = 6420.0, z = 31.5 },
+                        { name = 'moto cp 4 - the dune road again',     x = -450.0,  y = 6560.0, z = 15.0 },
+                        { name = 'moto cp 5 - beach road west, again',  x = -565.0,  y = 6516.0, z = 20.0 },
                     },
                 },
 
@@ -444,6 +454,11 @@ Config = {
                 -- down the coast highway, and a red gate low over the beach
                 -- where a bad landing costs sand, not sea.
                 air  = {
+                    -- Fan check (the bikes' lesson): h=295 walks the plane
+                    -- bays at (cos 295, sin 295) = SSE, INLAND up the dry
+                    -- backshore, with the noses pointing ENE down the sand.
+                    -- The anchor is a pint-verified land spot at z 8, and
+                    -- the garage's per-bay water guard covers the rest.
                     transition = { name = 'The planes - west end of the beach', x = -1350.0, y = 6370.0, z = 8.0, h = 295.0 },
                     checkpoints = {
                         { name = 'air gate 1 - over the beach road',     x = -160.0,  y = 6560.0, z = 110.0 },
