@@ -68,3 +68,13 @@ Same as the voice digest: one idea per draft, keep the submitter's own words as
 a quote, propose labels from the three axes (type / mode / handling), and don't
 seek clarification — take your best read. New modes and anything needing a map
 coordinate are always `needs-human`.
+
+## Gametype scopes are a different lane
+
+Owner scopes (full gametype designs from the crew) don't come through this idea
+box — they arrive via `scope-web/` (its own pull → render → promote flow, see
+`scope-web/README.md`). They're trusted crew input, already structured, and
+carry human-tagged map coordinates. Don't re-triage one into a one-liner; if a
+scope shows up here by mistake, point it at the scope form. A promoted scope's
+umbrella issue gets `scoped` added by a human after review — that label, not
+this pipeline, is what green-lights decomposition into `auto` child issues.

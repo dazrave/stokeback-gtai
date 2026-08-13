@@ -1,0 +1,5 @@
+# Pulled off the scope box by pull-scopes.sh; the box is the source of truth.
+submissions/
+
+# Local dev data (tokens.json must NEVER be committed anywhere).
+data/

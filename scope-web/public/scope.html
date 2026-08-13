@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Stokeback Mountain — Scope Form</title>
+<meta name="description" content="Scope a gametype properly: the pitch, the loop, the locations, the knobs." />
+<meta name="theme-color" content="#0a0c12" />
+<meta name="color-scheme" content="dark" />
+<meta name="robots" content="noindex" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Crect%20width='32'%20height='32'%20rx='7'%20fill='%230a0c12'/%3E%3Cpath%20d='M4%2024L13%2011l4%205%205-8%206%2016z'%20fill='%23ff8a3d'/%3E%3Crect%20x='13'%20y='6'%20width='8'%20height='2'%20fill='%23ffc06a'/%3E%3Crect%20x='13'%20y='9'%20width='6'%20height='2'%20fill='%23ffc06a'/%3E%3C/svg%3E" />
+<style>
+  :root{
+    --bg:#0a0c12; --bg-2:#0e111b; --panel:#121624; --panel-2:#161b2c;
+    --ink:#f6eee1; --muted:#b7ad9d; --dim:#8a8798; --line:rgba(246,238,225,.12);
+    --ember:#ff8a3d; --ember-deep:#e0662a; --ember-soft:#ffb46b;
+    --teal:#39b6ac; --amber:#ffc06a; --rose:#ff8fa0;
+    --danger:#ff7a6b; --good:#5fd0a8;
+    --font-display:"Rockwell","Rockwell Nova","Roboto Slab","Zilla Slab","Bookman Old Style",Georgia,serif;
+    --font-body:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --font-mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--bg); color:var(--ink); font-family:var(--font-body);
+    font-size:16px; line-height:1.55; -webkit-font-smoothing:antialiased}
+  a{color:var(--ember); text-decoration:none}
+  a:hover{color:var(--ember-soft)}
+  h1,h2,h3{font-family:var(--font-display); font-weight:700; line-height:1.05; margin:0}
+  ::selection{background:var(--ember); color:#1a1206}
+  :focus-visible{outline:2px solid var(--ember); outline-offset:3px; border-radius:4px}
+
+  .wrap{width:min(100% - 1.6rem, 780px); margin-inline:auto; padding-bottom:5rem}
+
+  header{display:flex; align-items:center; justify-content:space-between; gap:.8rem;
+    padding:.9rem 0; border-bottom:1px solid var(--line); flex-wrap:wrap}
+  .brand{display:flex; align-items:center; gap:.6rem; color:var(--ink)}
+  .brand svg{width:30px; height:30px; flex:none}
+  .brand b{font-family:var(--font-display); text-transform:uppercase; letter-spacing:.08em; font-size:.95rem}
+  .brand span{display:block; font-family:var(--font-mono); font-size:.6rem; letter-spacing:.22em;
+    text-transform:uppercase; color:var(--dim)}
+  .navlink{font-family:var(--font-display); font-weight:700; text-transform:uppercase;
+    letter-spacing:.06em; font-size:.78rem; padding:.55em 1em; border:1px solid var(--line);
+    border-radius:9px; background:rgba(246,238,225,.03)}
+  .navlink:hover{border-color:var(--ember); background:rgba(255,138,61,.07)}
+
+  .banner{display:none; margin-top:1rem; padding:.8em 1em; border-radius:10px; font-size:.92rem;
+    background:rgba(255,122,107,.1); border:1px solid rgba(255,122,107,.35); color:#ffe2dd}
+  .banner.is-show{display:block}
+  .banner.ok{background:rgba(95,208,168,.1); border-color:rgba(95,208,168,.35); color:#d9fff0}
+
+  .eyebrow{display:inline-flex; align-items:center; gap:.6em; font-family:var(--font-mono);
+    text-transform:uppercase; letter-spacing:.24em; font-size:.68rem; color:var(--ember); margin:1.6rem 0 .4rem}
+  .eyebrow::before{content:""; width:22px; height:2px; background:var(--ember)}
+
+  /* drafts list */
+  .drafts{display:grid; gap:.7rem; margin-top:.6rem}
+  .draft{display:flex; align-items:center; justify-content:space-between; gap:.8rem; padding:.9rem 1rem;
+    border:1px solid var(--line); border-radius:12px; background:linear-gradient(180deg,var(--panel),var(--panel-2));
+    cursor:pointer; transition:border-color .2s ease}
+  .draft:hover{border-color:rgba(255,138,61,.4)}
+  .draft b{font-family:var(--font-display); font-size:1.05rem}
+  .draft .meta{font-family:var(--font-mono); font-size:.7rem; color:var(--dim); margin-top:.15rem}
+  .pill{font-family:var(--font-mono); font-size:.62rem; letter-spacing:.14em; text-transform:uppercase;
+    padding:.25em .6em; border-radius:999px; border:1px solid var(--line); color:var(--muted); white-space:nowrap}
+  .pill.submitted{color:var(--good); border-color:rgba(95,208,168,.45)}
+  .empty{padding:1.4rem 1rem; border:1px dashed var(--line); border-radius:12px;
+    color:var(--dim); font-size:.92rem; text-align:center}
+  .newbox{display:flex; gap:.6rem; margin-top:1rem; flex-wrap:wrap}
+  .newbox input{flex:1; min-width:200px}
+
+  /* form controls */
+  .control{width:100%; font:inherit; color:var(--ink); background:var(--bg);
+    border:1px solid var(--line); border-radius:10px; padding:.75em .85em;
+    transition:border-color .2s ease, box-shadow .2s ease}
+  .control::placeholder{color:#6f6b7a}
+  .control:focus{outline:none; border-color:var(--ember); box-shadow:0 0 0 3px rgba(255,138,61,.18)}
+  .control[disabled]{opacity:.55; cursor:not-allowed}
+  textarea.control{resize:vertical; min-height:110px}
+  select.control{appearance:none; -webkit-appearance:none; cursor:pointer;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8' fill='none' stroke='%23ff8a3d' stroke-width='1.6'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5'/%3E%3C/svg%3E");
+    background-repeat:no-repeat; background-position:right .9rem center; background-size:12px; padding-right:2.4rem}
+  select.control option{background:var(--bg); color:var(--ink)}
+
+  .section{margin-top:1.8rem; padding:1.2rem 1.1rem 1.3rem; border:1px solid var(--line);
+    border-radius:14px; background:var(--panel)}
+  .section h3{font-size:1.1rem; display:flex; align-items:baseline; gap:.6rem}
+  .section h3 .n{color:var(--ember); font-family:var(--font-mono); font-size:.8rem}
+  .section .quip{color:var(--dim); font-size:.83rem; margin:.3rem 0 .9rem; font-style:italic}
+  .field{margin-bottom:.95rem}
+  .field:last-child{margin-bottom:0}
+  .field label{display:block; font-family:var(--font-display); font-weight:700; font-size:.88rem; margin-bottom:.4rem}
+  .cols{display:grid; grid-template-columns:1fr 1fr; gap:.9rem}
+  @media (max-width:560px){ .cols{grid-template-columns:1fr} }
+
+  /* framework grid */
+  .fw-group{margin-bottom:.9rem}
+  .fw-group > span{display:block; font-family:var(--font-display); font-weight:700; font-size:.85rem; margin-bottom:.4rem}
+  .fw-opts{display:flex; flex-wrap:wrap; gap:.45rem}
+  .fw-opts label{display:inline-flex; align-items:center; gap:.4em; padding:.4em .85em; border:1px solid var(--line);
+    border-radius:999px; font-size:.85rem; color:var(--muted); cursor:pointer; user-select:none}
+  .fw-opts input{position:absolute; opacity:0; pointer-events:none}
+  .fw-opts label:has(input:checked){border-color:var(--ember); color:var(--ember-soft); background:rgba(255,138,61,.09)}
+
+  /* locations */
+  .loc-attached{display:grid; gap:.55rem; margin:.6rem 0}
+  .loc{padding:.65rem .8rem; border:1px solid rgba(57,182,172,.35); border-radius:10px; background:var(--bg-2)}
+  .loc__top{display:flex; align-items:center; justify-content:space-between; gap:.6rem}
+  .loc__role{font-family:var(--font-mono); font-size:.66rem; letter-spacing:.12em; text-transform:uppercase; color:var(--teal)}
+  .loc__meta{font-family:var(--font-mono); font-size:.7rem; color:var(--dim); margin:.25rem 0 .45rem}
+  .loc input{font-size:.9rem; padding:.5em .7em}
+  .loc-avail{display:grid; gap:.55rem; margin-top:.6rem}
+  .loc-avail .loc{border-color:var(--line)}
+  .unlink{background:none; border:none; color:var(--danger); font-size:.75rem; cursor:pointer;
+    font-family:var(--font-mono); letter-spacing:.08em; text-transform:uppercase; padding:.2em .4em}
+
+  .btn{display:inline-flex; align-items:center; gap:.5em; font-family:var(--font-display);
+    font-weight:700; text-transform:uppercase; letter-spacing:.06em; font-size:.8rem;
+    padding:.65em 1.1em; border-radius:9px; border:1px solid transparent; cursor:pointer;
+    transition:transform .15s ease; white-space:nowrap}
+  .btn--primary{color:#20130a; background:linear-gradient(100deg,var(--ember-soft),var(--ember) 55%,var(--ember-deep));
+    box-shadow:0 6px 18px -8px rgba(255,138,61,.6)}
+  .btn--primary:hover{transform:translateY(-1px)}
+  .btn--ghost{color:var(--ink); background:rgba(246,238,225,.03); border-color:var(--line)}
+  .btn--ghost:hover{border-color:var(--ember); color:var(--ember-soft)}
+  .btn--good{color:#08211a; background:linear-gradient(100deg,#8ce6c2,var(--good) 60%,#3da983)}
+  .btn[disabled]{opacity:.55; cursor:progress; transform:none}
+
+  /* sticky save bar */
+  .savebar{position:fixed; left:0; right:0; bottom:0; z-index:40; display:none;
+    background:rgba(9,11,17,.92); backdrop-filter:blur(10px); border-top:1px solid var(--line)}
+  .savebar.is-show{display:block}
+  .savebar__inner{width:min(100% - 1.6rem, 780px); margin-inline:auto; display:flex;
+    align-items:center; gap:.8rem; padding:.7rem 0}
+  .savebar__state{font-family:var(--font-mono); font-size:.72rem; color:var(--dim); flex:1}
+  .savebar__state.dirty{color:var(--amber)}
+
+  footer{margin:2.6rem 0 1.6rem; color:var(--dim); font-size:.78rem; font-family:var(--font-mono)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <a class="brand" href="/scope" id="brand-link">
+    <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#121624"/><path d="M4 25L13 11l4 5 5-9 6 18z" fill="#ff8a3d"/><rect x="13" y="6" width="8" height="2" fill="#ffc06a"/><rect x="13" y="9" width="6" height="2" fill="#ffc06a"/></svg>
+    <div><b>Scope Form</b><span>Stokeback Mountain</span></div>
+  </a>
+  <a class="navlink" href="/" id="tag-link">← Tag board</a>
+</header>
+
+<p class="banner" id="banner" role="status" aria-live="polite"></p>
+
+<!-- ============ LIST VIEW ============ -->
+<div id="view-list">
+  <span class="eyebrow">Your gametypes</span>
+  <p class="quip" style="color:var(--dim); font-size:.85rem; margin:.2rem 0 0">
+    Every mode starts as a scope doc. Autosaves as you type; submit when it's night-one ready.</p>
+  <div class="drafts" id="drafts"><div class="empty">Loading…</div></div>
+  <div class="newbox">
+    <input class="control" type="text" id="new-name" maxlength="80"
+      placeholder="New gametype name — pub-quiz-team rules apply" />
+    <button class="btn btn--primary" type="button" id="new-btn">Start scoping</button>
+  </div>
+</div>
+
+<!-- ============ EDITOR VIEW ============ -->
+<div id="view-editor" style="display:none">
+  <span class="eyebrow" id="ed-eyebrow">Scoping</span>
+
+  <div class="section">
+    <h3><span class="n">01</span> The gametype</h3>
+    <p class="quip">Name it like a pub quiz team — a groan means it's working.</p>
+    <div class="field"><label for="f-name">Name</label>
+      <input class="control" type="text" id="f-name" maxlength="80" placeholder="e.g. Pint of the Dead II: Last Orders" /></div>
+    <div class="cols">
+      <div class="field"><label for="f-slug">Slug <span style="color:var(--dim); font-weight:400; font-size:.75rem">(frozen after first save)</span></label>
+        <input class="control" type="text" id="f-slug" maxlength="30" pattern="[a-z0-9-]+" placeholder="auto-from-name" /></div>
+      <div class="field"><label for="f-basis">Basis</label>
+        <select class="control" id="f-basis">
+          <option value="new mode">new mode</option>
+          <option value="evolves: infected">evolves: infected</option>
+          <option value="evolves: pint">evolves: pint</option>
+          <option value="evolves: chase">evolves: chase</option>
+          <option value="evolves: squadmate">evolves: squadmate</option>
+        </select></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h3><span class="n">02</span> The pitch</h3>
+    <p class="quip">Premise and the comedy tie-in. Why is this funny at 9pm on a Thursday?</p>
+    <div class="field"><textarea class="control" id="f-pitch" maxlength="4000"
+      placeholder="Sell it in a paragraph. If it doesn't make a mate snort, rewrite it."></textarea></div>
+  </div>
+
+  <div class="section">
+    <h3><span class="n">03</span> The core loop</h3>
+    <p class="quip">Minute to minute — what are we actually doing between screams?</p>
+    <div class="field"><textarea class="control" id="f-loop" maxlength="4000"
+      placeholder="Spawn, scramble, objective, panic, repeat…"></textarea></div>
+  </div>
+
+  <div class="section">
+    <h3><span class="n">04</span> Win / lose</h3>
+    <p class="quip">How it ends. Someone buys the round either way.</p>
+    <div class="field"><textarea class="control" id="f-winlose" maxlength="4000"
+      placeholder="Win when… lose when… draw means everyone loses."></textarea></div>
+  </div>
+
+  <div class="section">
+    <h3><span class="n">05</span> Night one vs the wishlist</h3>
+    <p class="quip">Be honest about the minimum — the AI reads the wishlist when it's feeling generous.</p>
+    <div class="field"><label for="f-nightone">Night one minimum</label>
+      <textarea class="control" id="f-nightone" maxlength="4000"
+        placeholder="The bare bones that MUST work on the night."></textarea></div>
+    <div class="field"><label for="f-wishlist">The wishlist</label>
+      <textarea class="control" id="f-wishlist" maxlength="4000"
+        placeholder="Everything else — helicopters, weather, a dog."></textarea></div>
+  </div>
+
+  <div class="section">
+    <h3><span class="n">06</span> Framework features</h3>
+    <p class="quip">What the framework sets up before anyone's even died.</p>
+    <div class="fw-group"><span>Teams</span>
+      <div class="fw-opts" id="fw-teams">
+        <label><input type="radio" name="fw-teams" value="ffa" />free-for-all</label>
+        <label><input type="radio" name="fw-teams" value="coop" />co-op</label>
+        <label><input type="radio" name="fw-teams" value="custom teams" />custom teams</label>
+      </div></div>
+    <div class="fw-group"><span>Population</span>
+      <div class="fw-opts" id="fw-population">
+        <label><input type="radio" name="fw-population" value="empty" />empty</label>
+        <label><input type="radio" name="fw-population" value="sparse" />sparse</label>
+        <label><input type="radio" name="fw-population" value="alive" />alive</label>
+      </div></div>
+    <div class="fw-group"><span>Police</span>
+      <div class="fw-opts" id="fw-police">
+        <label><input type="radio" name="fw-police" value="ambient" />ambient</label>
+        <label><input type="radio" name="fw-police" value="off" />off</label>
+        <label><input type="radio" name="fw-police" value="custom" />custom</label>
+      </div></div>
+    <div class="cols">
+      <div class="field"><label for="f-fw-respawn">Respawn policy</label>
+        <input class="control" type="text" id="f-fw-respawn" maxlength="200" placeholder="e.g. waves of 30s, or perma-dead" /></div>
+      <div class="field"><label for="f-fw-clock">Clock / weather override</label>
+        <input class="control" type="text" id="f-fw-clock" maxlength="200" placeholder="e.g. locked midnight, thunderstorm" /></div>
+    </div>
+    <div class="field"><label for="f-fw-timer">Round timer</label>
+      <input class="control" type="text" id="f-fw-timer" maxlength="200" placeholder="e.g. 15 min hard stop, sudden death after" /></div>
+    <div class="field"><label for="f-fw-other">Other framework asks</label>
+      <textarea class="control" id="f-fw-other" maxlength="4000"
+        placeholder="Anything else the framework should hand you on a plate."></textarea></div>
+  </div>
+
+  <div class="section">
+    <h3><span class="n">07</span> config.lua knobs</h3>
+    <p class="quip">The numbers you'll want to fiddle with at 11pm, mid-round, while everyone shouts.</p>
+    <div class="field"><textarea class="control" id="f-knobs" maxlength="4000"
+      placeholder="horde_size, pint_health, cop_aggression = 11…"></textarea></div>
+  </div>
+
+  <div class="section">
+    <h3><span class="n">08</span> Locations</h3>
+    <p class="quip">Verified spots only — the build agents aren't allowed to guess coordinates.
+      Tag them in game on the <a href="/" id="tag-link-2">tag board</a>, then attach them here.</p>
+    <div class="field">
+      <button class="btn btn--ghost" type="button" id="loc-load">Load tags for this gametype</button>
+    </div>
+    <div class="loc-attached" id="loc-attached"></div>
+    <div class="loc-avail" id="loc-avail"></div>
+    <div class="field" style="margin-top:.9rem"><label for="f-locneeded">Locations still needed</label>
+      <textarea class="control" id="f-locneeded" maxlength="4000"
+        placeholder="Spots you still owe the map. IOUs, in writing."></textarea></div>
+  </div>
+
+  <div class="section">
+    <h3><span class="n">09</span> Acceptance criteria</h3>
+    <p class="quip">How do we know it works on the night — before the horde does?</p>
+    <div class="field"><textarea class="control" id="f-acceptance" maxlength="4000"
+      placeholder="e.g. 4 players spawn together, round ends itself, nobody falls through the map (much)."></textarea></div>
+  </div>
+
+  <footer>Autosaves every ~25s while you type. Submitting files a snapshot for triage — you can resubmit any time.</footer>
+</div>
+
+</div><!-- /wrap -->
+
+<!-- sticky save bar -->
+<div class="savebar" id="savebar">
+  <div class="savebar__inner">
+    <button class="btn btn--ghost" type="button" id="back-btn">← Drafts</button>
+    <span class="savebar__state" id="save-state">not saved yet</span>
+    <button class="btn btn--primary" type="button" id="save-btn">Save</button>
+    <button class="btn btn--good" type="button" id="submit-btn">Submit</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var KEY = new URLSearchParams(location.search).get('key') || '';
+  var $ = function(id){ return document.getElementById(id); };
+  function esc(s){
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+  function api(path){ return path + (path.indexOf('?') < 0 ? '?' : '&') + 'key=' + encodeURIComponent(KEY); }
+  function slugify(s){
+    return String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 30);
+  }
+
+  $('tag-link').href = '/?key=' + encodeURIComponent(KEY);
+  $('tag-link-2').href = '/?key=' + encodeURIComponent(KEY);
+  $('brand-link').href = '/scope?key=' + encodeURIComponent(KEY);
+
+  var banner = $('banner');
+  function setBanner(msg, ok){
+    banner.textContent = msg;
+    banner.className = 'banner is-show' + (ok ? ' ok' : '');
+    if (ok) setTimeout(function(){ banner.className = 'banner'; }, 6000);
+  }
+
+  if (!KEY){
+    setBanner("No key in the URL — this page runs on ?key=… links. Ask Daz for yours.");
+    $('drafts').innerHTML = '<div class="empty">No key, no scoping. Them’s the rules.</div>';
+    $('new-btn').disabled = true;
+  }
+
+  // ---------- state ----------
+  var slug = '';            // current draft slug
+  var slugFrozen = false;   // frozen after first successful save
+  var status = 'draft';
+  var locations = [];       // attached verified tags
+  var dirty = false;
+  var saveTimer = null;
+  var saving = false;
+
+  // ---------- drafts list ----------
+  function fmtWhen(ts){
+    if (!ts) return '';
+    var d = new Date(ts * 1000);
+    return d.toLocaleDateString(undefined, {day:'numeric', month:'short'}) + ' ' +
+           d.toLocaleTimeString(undefined, {hour:'2-digit', minute:'2-digit'});
+  }
+
+  function loadDrafts(){
+    if (!KEY) return;
+    fetch(api('/api/scope')).then(function(r){
+      if (r.status === 403 || r.status === 429){ setBanner("That key isn't on the list — check your link with Daz."); return null; }
+      if (r.status === 503){ setBanner("The scope box isn't configured yet (no tokens.json)."); return null; }
+      return r.json();
+    }).then(function(d){
+      if (!d) return;
+      var drafts = d.drafts || [];
+      if (!drafts.length){
+        $('drafts').innerHTML = '<div class="empty">Nothing scoped yet. The mountain awaits your genius (or at least your typing).</div>';
+        return;
+      }
+      $('drafts').innerHTML = drafts.map(function(dr){
+        return '<div class="draft" data-slug="' + esc(dr.slug) + '" role="button" tabindex="0">' +
+          '<div><b>' + esc(dr.name || dr.slug) + '</b>' +
+          '<div class="meta">' + esc(dr.slug) + (dr.updated ? ' · saved ' + fmtWhen(dr.updated) : '') + '</div></div>' +
+          '<span class="pill' + (dr.status === 'submitted' ? ' submitted' : '') + '">' + esc(dr.status) + '</span>' +
+        '</div>';
+      }).join('');
+    }).catch(function(){ setBanner("Can't reach the scope server."); });
+  }
+  loadDrafts();
+
+  $('drafts').addEventListener('click', function(ev){
+    var el = ev.target.closest('.draft');
+    if (el) openDraft(el.dataset.slug);
+  });
+  $('drafts').addEventListener('keydown', function(ev){
+    var el = ev.target.closest('.draft');
+    if (el && (ev.key === 'Enter' || ev.key === ' ')){ ev.preventDefault(); openDraft(el.dataset.slug); }
+  });
+
+  $('new-btn').addEventListener('click', function(){
+    var name = $('new-name').value.trim();
+    if (!name){ setBanner('Give it a name first — even a bad one.'); $('new-name').focus(); return; }
+    var s = slugify(name);
+    if (!s){ setBanner('That name boils down to nothing slug-shaped. Add some letters.'); return; }
+    startEditor({slug: s, name: name, status: 'draft', form: {name: name, basis: 'new mode'}}, false);
+  });
+
+  // ---------- editor ----------
+  var FIELDS = {   // form key -> element id (plain text fields)
+    name: 'f-name', pitch: 'f-pitch', loop: 'f-loop', winlose: 'f-winlose',
+    nightOne: 'f-nightone', wishlist: 'f-wishlist', knobs: 'f-knobs',
+    locationsNeeded: 'f-locneeded', acceptance: 'f-acceptance'
+  };
+  var FW_TEXT = { respawn: 'f-fw-respawn', clock: 'f-fw-clock', roundTimer: 'f-fw-timer', other: 'f-fw-other' };
+  var FW_RADIO = ['teams', 'population', 'police'];
+
+  function openDraft(s){
+    fetch(api('/api/scope?slug=' + encodeURIComponent(s)))
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(doc){
+        if (!doc){ setBanner("Couldn't open that draft."); return; }
+        startEditor(doc, true);
+      }).catch(function(){ setBanner("Can't reach the scope server."); });
+  }
+
+  function startEditor(doc, frozen){
+    slug = doc.slug;
+    slugFrozen = frozen;
+    status = doc.status || 'draft';
+    var form = doc.form || {};
+
+    Object.keys(FIELDS).forEach(function(k){ $(FIELDS[k]).value = form[k] || ''; });
+    $('f-slug').value = slug;
+    $('f-slug').disabled = slugFrozen;
+    $('f-basis').value = form.basis || 'new mode';
+
+    var fw = form.framework || {};
+    FW_RADIO.forEach(function(g){
+      var el = document.querySelector('input[name="fw-' + g + '"][value="' + CSS.escape(fw[g] || '') + '"]');
+      document.querySelectorAll('input[name="fw-' + g + '"]').forEach(function(r){ r.checked = false; });
+      if (el) el.checked = true;
+    });
+    Object.keys(FW_TEXT).forEach(function(k){ $(FW_TEXT[k]).value = fw[k] || ''; });
+
+    locations = Array.isArray(form.locations) ? form.locations.slice() : [];
+    renderAttached();
+    $('loc-avail').innerHTML = '';
+
+    dirty = false;
+    setSaveState(frozen ? 'saved draft loaded' : 'not saved yet');
+    $('ed-eyebrow').textContent = 'Scoping: ' + (form.name || slug) + (status === 'submitted' ? ' (submitted)' : '');
+
+    $('view-list').style.display = 'none';
+    $('view-editor').style.display = '';
+    $('savebar').classList.add('is-show');
+    window.scrollTo(0, 0);
+  }
+
+  function closeEditor(){
+    if (dirty && !confirm('Unsaved scribbles — leave anyway?')) return;
+    if (saveTimer){ clearTimeout(saveTimer); saveTimer = null; }
+    $('view-editor').style.display = 'none';
+    $('savebar').classList.remove('is-show');
+    $('view-list').style.display = '';
+    loadDrafts();
+  }
+  $('back-btn').addEventListener('click', closeEditor);
+
+  // name drives the slug until it's frozen
+  $('f-name').addEventListener('input', function(){
+    if (!slugFrozen) $('f-slug').value = slugify($('f-name').value) || slug;
+  });
+
+  function collectForm(){
+    var form = {};
+    Object.keys(FIELDS).forEach(function(k){ form[k] = $(FIELDS[k]).value; });
+    form.basis = $('f-basis').value;
+    var fw = {};
+    FW_RADIO.forEach(function(g){
+      var el = document.querySelector('input[name="fw-' + g + '"]:checked');
+      fw[g] = el ? el.value : '';
+    });
+    Object.keys(FW_TEXT).forEach(function(k){ fw[k] = $(FW_TEXT[k]).value; });
+    form.framework = fw;
+    form.locations = locations;
+    return form;
+  }
+
+  // ---------- autosave ----------
+  function setSaveState(msg, isDirty){
+    var el = $('save-state');
+    el.textContent = msg;
+    el.className = 'savebar__state' + (isDirty ? ' dirty' : '');
+  }
+  function markDirty(){
+    dirty = true;
+    setSaveState('unsaved changes…', true);
+    if (!saveTimer){
+      saveTimer = setTimeout(function(){ saveTimer = null; save(false); }, 25000);
+    }
+  }
+  document.querySelectorAll('#view-editor input, #view-editor textarea, #view-editor select')
+    .forEach(function(el){ el.addEventListener('input', markDirty); });
+
+  function save(explicit){
+    if (!KEY || saving) return Promise.resolve(false);
+    if (!slugFrozen){
+      var s = slugify($('f-slug').value || $('f-name').value);
+      if (!s){ setBanner('Need a slug before saving — letters and dashes only.'); return Promise.resolve(false); }
+      slug = s;
+      $('f-slug').value = s;
+    }
+    saving = true;
+    dirty = false;
+    setSaveState('saving…');
+    return fetch('/api/scope', {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({key: KEY, slug: slug, form: collectForm()})
+    }).then(function(res){
+      return res.json().catch(function(){ return {}; }).then(function(d){ return {ok: res.ok, d: d}; });
+    }).then(function(r){
+      saving = false;
+      if (r.ok && r.d.ok){
+        if (!slugFrozen){ slugFrozen = true; $('f-slug').disabled = true; }
+        status = r.d.status || status;
+        var t = new Date(r.d.updated * 1000);
+        setSaveState('last saved ' + t.toLocaleTimeString(undefined, {hour:'2-digit', minute:'2-digit'}));
+        return true;
+      }
+      dirty = true;
+      setSaveState('save failed — ' + ((r.d && r.d.error) || 'server said no'), true);
+      if (explicit) setBanner((r.d && r.d.error) || 'Save failed. Try again.');
+      return false;
+    }).catch(function(){
+      saving = false;
+      dirty = true;
+      setSaveState('save failed — offline?', true);
+      if (explicit) setBanner("Couldn't reach the server — your words are still in the page, don't refresh.");
+      return false;
+    });
+  }
+  $('save-btn').addEventListener('click', function(){ save(true); });
+
+  // save on tab-hide too: phones love killing background tabs
+  document.addEventListener('visibilitychange', function(){
+    if (document.visibilityState === 'hidden' && dirty && slug) save(false);
+  });
+
+  // ---------- submit ----------
+  $('submit-btn').addEventListener('click', function(){
+    if (!confirm('Submit "' + ($('f-name').value || slug) + '" for triage? You can keep editing and resubmit later.')) return;
+    var btn = $('submit-btn');
+    btn.disabled = true;
+    save(true).then(function(ok){
+      if (!ok){ btn.disabled = false; return; }
+      return fetch('/api/scope/submit', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({key: KEY, slug: slug})
+      }).then(function(res){
+        return res.json().catch(function(){ return {}; }).then(function(d){ return {ok: res.ok, d: d}; });
+      }).then(function(r){
+        btn.disabled = false;
+        if (r.ok && r.d.ok){
+          status = 'submitted';
+          $('ed-eyebrow').textContent = 'Scoping: ' + ($('f-name').value || slug) + ' (submitted)';
+          setBanner('Submitted — snapshot filed for triage. Get in. (Edit and resubmit whenever.)', true);
+          window.scrollTo({top: 0, behavior: 'smooth'});
+        } else {
+          setBanner((r.d && r.d.error) || 'Submit failed — try again.');
+        }
+      });
+    }).catch(function(){ btn.disabled = false; setBanner('Submit failed — try again.'); });
+  });
+
+  // ---------- locations ----------
+  function locLine(t){
+    return esc(t.x) + ', ' + esc(t.y) + ', ' + esc(t.z) + ' · hdg ' + esc(t.heading) +
+      (t.street ? ' · ' + esc(t.street) : '') + ' · tagged by ' + esc(t.taggedBy || '?');
+  }
+
+  function renderAttached(){
+    var el = $('loc-attached');
+    if (!locations.length){
+      el.innerHTML = '<div class="empty">No verified spots attached yet. A mode with no map is just a group chat.</div>';
+      return;
+    }
+    el.innerHTML = locations.map(function(t, i){
+      return '<div class="loc">' +
+        '<div class="loc__top"><span class="loc__role">' + esc(t.role) + '</span>' +
+        '<button class="unlink" type="button" data-i="' + i + '">detach</button></div>' +
+        '<div class="loc__meta">' + locLine(t) + '</div>' +
+        '<input class="control" type="text" maxlength="300" data-note="' + i + '" ' +
+          'value="' + esc(t.note || '') + '" placeholder="Label this spot — what is it for?" />' +
+      '</div>';
+    }).join('');
+  }
+
+  $('loc-attached').addEventListener('click', function(ev){
+    var btn = ev.target.closest('button[data-i]');
+    if (!btn) return;
+    locations.splice(Number(btn.dataset.i), 1);
+    renderAttached();
+    markDirty();
+  });
+  $('loc-attached').addEventListener('input', function(ev){
+    var input = ev.target.closest('input[data-note]');
+    if (!input) return;
+    var t = locations[Number(input.dataset.note)];
+    if (t) t.note = input.value;
+    markDirty();
+  });
+
+  $('loc-load').addEventListener('click', function(){
+    var g = slugify($('f-slug').value) || slug;
+    if (!g){ setBanner('Save the draft first so tags have a slug to live under.'); return; }
+    fetch(api('/api/tags?gametype=' + encodeURIComponent(g)))
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(d){
+        var tags = (d && d.tags) || [];
+        var attached = {};
+        locations.forEach(function(t){ attached[t.id] = true; });
+        var avail = tags.filter(function(t){ return !attached[t.id]; });
+        if (!avail.length){
+          $('loc-avail').innerHTML = '<div class="empty">No unattached tags under “' + esc(g) +
+            '”. Go stand somewhere meaningful and tag it on the <a href="/?key=' + encodeURIComponent(KEY) + '">tag board</a>.</div>';
+          return;
+        }
+        $('loc-avail').innerHTML = avail.map(function(t){
+          return '<div class="loc">' +
+            '<div class="loc__top"><span class="loc__role">' + esc(t.role) + '</span>' +
+            '<button class="btn btn--ghost" type="button" data-id="' + esc(t.id) + '" style="font-size:.68rem; padding:.45em .8em">Attach</button></div>' +
+            (t.note ? '<div style="font-size:.88rem; margin:.2rem 0">' + esc(t.note) + '</div>' : '') +
+            '<div class="loc__meta">' + locLine(t) + '</div>' +
+          '</div>';
+        }).join('');
+        $('loc-avail').dataset.cached = JSON.stringify(avail);
+      }).catch(function(){ setBanner("Couldn't load tags."); });
+  });
+
+  $('loc-avail').addEventListener('click', function(ev){
+    var btn = ev.target.closest('button[data-id]');
+    if (!btn) return;
+    var avail = JSON.parse($('loc-avail').dataset.cached || '[]');
+    var tag = avail.find(function(t){ return t.id === btn.dataset.id; });
+    if (!tag) return;
+    locations.push({id: tag.id, role: tag.role, note: tag.note || '', x: tag.x, y: tag.y, z: tag.z,
+      heading: tag.heading, street: tag.street || '', taggedBy: tag.taggedBy || ''});
+    btn.closest('.loc').remove();
+    renderAttached();
+    markDirty();
+  });
+})();
+</script>
+</body>
+</html>

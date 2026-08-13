@@ -1,0 +1,527 @@
+#!/usr/bin/env python3
+"""The SBM scope board: live player tagging + gametype scope forms.
+
+Deliberately stdlib-only, same as web/server.py: this runs on a slim LXC with
+Python and nothing else. It serves two pages and a small JSON API:
+
+  - the tag page: who's in the game right now (proxied from the FiveM
+    telemetry endpoint) and a way to tag a player's current spot with a role
+    and a note, filed under a gametype. Tags become VERIFIED map coordinates -
+    the build agents are forbidden from guessing coords, so these tags are the
+    only way locations get automated.
+  - the scope form: a long-form, autosaving scope-of-work document per owner
+    per gametype.
+
+There are no accounts and no sessions. A token in tokens.json IS the identity:
+hand-created on the box, never in the repo, one line per owner. Everything
+except /api/health requires one. Submissions are trusted-ish (mates only) but
+still cleaned and capped - a token is a link in a group chat, not a vault.
+"""
+import json
+import math
+import os
+import re
+import secrets
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from threading import Lock
+
+HERE = Path(__file__).resolve().parent
+PUBLIC = HERE / "public"
+DATA = Path(os.environ.get("SCOPE_DATA", "./data"))
+TOKENS = DATA / "tokens.json"
+SCOPES = DATA / "scopes"
+SUBMITTED = SCOPES / "submitted"
+TAGS = DATA / "tags"
+
+HOST = os.environ.get("SCOPE_HOST", "0.0.0.0")
+PORT = int(os.environ.get("PORT", "8099"))
+TELEMETRY_URL = os.environ.get("TELEMETRY_URL", "http://192.168.0.212:30120/telemetry")
+TELEMETRY_KEY = os.environ.get("TELEMETRY_KEY", "")
+
+MAX_BODY = 8 * 1024          # bytes; a tag is a note, not a novel
+MAX_SCOPE_BODY = 64 * 1024   # bytes; the scope form alone gets the big cap
+MAX_SECTION = 4000           # characters per scope section
+MAX_NOTE = 300               # characters on a tag note
+MAX_NAME = 64
+RATE_MAX = 6                 # invalid-token attempts...
+RATE_WINDOW = 3600           # ...per IP per hour (valid tokens are never limited)
+
+SLUG_RE = re.compile(r"^[a-z0-9-]{1,30}$")
+
+# The only roles a tag may carry. Matches the dropdown in public/tag.html.
+TAG_ROLES = (
+    "player spawn", "vehicle spawn", "ai spawn", "objective", "item spawn",
+    "round start area", "extraction point", "safe zone", "zone boundary",
+    "shop / interaction", "set dressing", "director cam", "other",
+)
+
+CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+for d in (SCOPES, SUBMITTED, TAGS):
+    d.mkdir(parents=True, exist_ok=True)
+
+_hits: dict[str, list[float]] = {}
+_lock = Lock()
+
+
+def clean(text: str, limit: int) -> str:
+    text = CONTROL.sub("", str(text)).strip()
+    return text[:limit]
+
+
+def rate_ok(ip: str) -> bool:
+    now = time.time()
+    with _lock:
+        seen = [t for t in _hits.get(ip, []) if now - t < RATE_WINDOW]
+        if len(seen) >= RATE_MAX:
+            _hits[ip] = seen
+            return False
+        seen.append(now)
+        _hits[ip] = seen
+        return True
+
+
+def load_tokens():
+    """tokens.json, re-read on every request (it is tiny; rotation needs no
+    restart). None means 'not configured' - missing or unreadable."""
+    try:
+        data = json.loads(TOKENS.read_text(encoding="utf-8"))
+    except (FileNotFoundError, ValueError, OSError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def read_json_file(path: Path, fallback):
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, ValueError, OSError):
+        return fallback
+
+
+def write_json_atomic(path: Path, payload) -> None:
+    """Temp + rename so a crash mid-write never leaves a torn file. Callers
+    hold _lock, so the fixed tmp name cannot collide."""
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(path)
+
+
+def num(value, default=None):
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return default
+    if not math.isfinite(value):
+        return default
+    return round(value, 2)
+
+
+def sanitise(value, depth=0):
+    """Recursive per-field clean for the scope form: strings capped, numbers
+    kept finite, structure depth- and width-limited. The 64KB body cap has
+    already bounded the total size."""
+    if depth > 5:
+        return None
+    if isinstance(value, str):
+        return clean(value, MAX_SECTION)
+    if isinstance(value, bool) or value is None:
+        return value
+    if isinstance(value, (int, float)):
+        return num(value, 0)
+    if isinstance(value, list):
+        return [sanitise(v, depth + 1) for v in value[:200]]
+    if isinstance(value, dict):
+        return {clean(str(k), 60): sanitise(v, depth + 1)
+                for k, v in list(value.items())[:60]}
+    return None
+
+
+# ---- telemetry proxy ----
+
+def fetch_players() -> dict:
+    """Ask the game server who is standing where. Any failure at all degrades
+    to an empty list plus a soft error - the page must never break just
+    because the game box is off having a lie down."""
+    url = TELEMETRY_URL.rstrip("/") + "/players"
+    if TELEMETRY_KEY:
+        url += "?" + urllib.parse.urlencode({"key": TELEMETRY_KEY})
+    try:
+        with urllib.request.urlopen(url, timeout=2) as resp:
+            raw = json.loads(resp.read().decode("utf-8", "replace"))
+    except Exception:
+        return {"players": [], "error": "game server not answering"}
+    return {"players": normalise_players(raw)}
+
+
+def normalise_players(raw) -> list:
+    """The telemetry envelope may vary; accept a bare list, {players:[...]},
+    or {data:{players:[...]}} and squeeze each row into a fixed shape."""
+    rows = []
+    if isinstance(raw, list):
+        rows = raw
+    elif isinstance(raw, dict):
+        for key in ("players", "list"):
+            if isinstance(raw.get(key), list):
+                rows = raw[key]
+                break
+        else:
+            inner = raw.get("data")
+            if isinstance(inner, list):
+                rows = inner
+            elif isinstance(inner, dict) and isinstance(inner.get("players"), list):
+                rows = inner["players"]
+
+    players = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        heading = row.get("heading", row.get("h", row.get("hdg", 0)))
+        players.append({
+            "name": clean(str(row.get("name", "")), MAX_NAME) or "?",
+            "x": num(row.get("x"), 0.0),
+            "y": num(row.get("y"), 0.0),
+            "z": num(row.get("z"), 0.0),
+            "heading": num(heading, 0.0),
+            "street": clean(str(row.get("street") or ""), 80),
+            "area": clean(str(row.get("area") or ""), 80),
+        })
+    return players
+
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = "sbm-scope/1.0"
+
+    def log_message(self, fmt, *args):  # quieter default logging
+        print(f"[scope] {self.address_string()} {fmt % args}")
+
+    def _send(self, code, body=b"", ctype="text/plain; charset=utf-8"):
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.end_headers()
+        if body:
+            self.wfile.write(body)
+
+    def _json(self, payload, code=200):
+        self._send(code, json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                   "application/json")
+
+    def _reject(self, message, code=400):
+        self._json({"ok": False, "error": message}, code)
+
+    def client_ip(self) -> str:
+        # Behind Cloudflare the real client is in this header; fall back to
+        # the socket for direct LAN access.
+        return self.headers.get("CF-Connecting-IP") or self.client_address[0]
+
+    # ---- auth: the token IS the identity ----
+
+    def _auth(self, key):
+        """Return the token's entry ({owner, fivem}) or None after replying.
+        Only INVALID attempts are rate limited - a valid token autosaving all
+        evening must never trip a bucket."""
+        tokens = load_tokens()
+        if tokens is None:
+            self._reject("not configured", 503)
+            return None
+        entry = tokens.get(key) if key else None
+        owner = entry.get("owner") if isinstance(entry, dict) else None
+        if not owner or not SLUG_RE.match(str(owner)):
+            if not rate_ok(self.client_ip()):
+                self._reject("steady on - that key still isn't going to work", 429)
+                return None
+            self._reject("that key isn't on the list", 403)
+            return None
+        return entry
+
+    def _read_body(self, cap):
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        if length <= 0 or length > cap:
+            self._reject("body is the wrong size")
+            return None
+        try:
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            self._reject("could not read that")
+            return None
+        if not isinstance(payload, dict):
+            self._reject("expected a JSON object")
+            return None
+        return payload
+
+    # ---- GET ----
+
+    def do_GET(self):
+        route, _, query = self.path.partition("?")
+        params = urllib.parse.parse_qs(query)
+        key = (params.get("key") or [""])[0]
+
+        if route == "/api/health":
+            return self._json({"ok": True})
+
+        if route == "/api/players":
+            if self._auth(key) is None:
+                return
+            return self._json(fetch_players())
+
+        if route == "/api/gametypes":
+            if self._auth(key) is None:
+                return
+            return self._json({"gametypes": self.list_gametypes()})
+
+        if route == "/api/tags":
+            if self._auth(key) is None:
+                return
+            gametype = (params.get("gametype") or [""])[0]
+            return self.get_tags(gametype)
+
+        if route == "/api/scope":
+            entry = self._auth(key)
+            if entry is None:
+                return
+            slug = (params.get("slug") or [""])[0]
+            return self.get_scope(entry["owner"], slug)
+
+        return self.serve_static(route)
+
+    def serve_static(self, route):
+        if route in ("/", ""):
+            route = "/tag.html"
+        elif route == "/scope":
+            route = "/scope.html"
+
+        target = (PUBLIC / route.lstrip("/")).resolve()
+
+        # No escaping the public directory.
+        if not str(target).startswith(str(PUBLIC) + os.sep) or not target.is_file():
+            return self._send(404, b"not found")
+
+        ctype = {
+            ".html": "text/html; charset=utf-8",
+            ".css": "text/css; charset=utf-8",
+            ".js": "text/javascript; charset=utf-8",
+            ".svg": "image/svg+xml",
+            ".png": "image/png",
+            ".ico": "image/x-icon",
+        }.get(target.suffix, "application/octet-stream")
+
+        self._send(200, target.read_bytes(), ctype)
+
+    def list_gametypes(self) -> list:
+        """Every scope doc plus the fixed catch-all. Tags with nowhere better
+        to live go under 'general'."""
+        entries = [{"owner": "sbm", "name": "General", "slug": "general",
+                    "status": "fixed"}]
+        for path in sorted(SCOPES.glob("*.json")):
+            doc = read_json_file(path, None)
+            if not isinstance(doc, dict):
+                continue
+            slug = doc.get("slug", "")
+            if not SLUG_RE.match(str(slug)):
+                continue
+            entries.append({
+                "owner": clean(str(doc.get("owner", "")), 30),
+                "name": clean(str(doc.get("name") or slug), 80),
+                "slug": slug,
+                "status": clean(str(doc.get("status", "draft")), 20),
+            })
+        return entries
+
+    def get_tags(self, gametype):
+        if gametype:
+            if not SLUG_RE.match(gametype):
+                return self._reject("that gametype slug looks wrong")
+            tags = read_json_file(TAGS / f"{gametype}.json", [])
+            tags = tags if isinstance(tags, list) else []
+            return self._json({"tags": list(reversed(tags))})
+
+        # No gametype: everything, newest first, capped. Lets the tag page
+        # show one combined 'recent tags' list.
+        merged = []
+        for path in TAGS.glob("*.json"):
+            tags = read_json_file(path, [])
+            if isinstance(tags, list):
+                merged.extend(t for t in tags if isinstance(t, dict))
+        merged.sort(key=lambda t: t.get("ts", 0), reverse=True)
+        return self._json({"tags": merged[:200]})
+
+    def get_scope(self, owner, slug):
+        if slug:
+            if not SLUG_RE.match(slug):
+                return self._reject("that slug looks wrong")
+            doc = read_json_file(SCOPES / f"{owner}--{slug}.json", None)
+            if not isinstance(doc, dict):
+                return self._reject("no such draft", 404)
+            return self._json(doc)
+
+        drafts = []
+        for path in sorted(SCOPES.glob(f"{owner}--*.json")):
+            doc = read_json_file(path, None)
+            if not isinstance(doc, dict):
+                continue
+            drafts.append({
+                "slug": doc.get("slug", ""),
+                "name": doc.get("name", ""),
+                "status": doc.get("status", "draft"),
+                "updated": doc.get("updated", 0),
+            })
+        drafts.sort(key=lambda d: d.get("updated", 0), reverse=True)
+        return self._json({"drafts": drafts})
+
+    # ---- POST / PUT ----
+
+    def do_POST(self):
+        route = self.path.partition("?")[0]
+
+        if route == "/api/tag":
+            return self.post_tag()
+        if route == "/api/scope/submit":
+            return self.post_submit()
+        return self._send(404, b"not found")
+
+    def do_PUT(self):
+        route = self.path.partition("?")[0]
+
+        if route == "/api/scope":
+            return self.put_scope()
+        return self._send(404, b"not found")
+
+    def _body_and_entry(self, cap):
+        """Shared preamble for the write routes: read the JSON body, then
+        authenticate on its 'key' field (query-string key as a fallback)."""
+        body = self._read_body(cap)
+        if body is None:
+            return None, None
+        query = urllib.parse.parse_qs(self.path.partition("?")[2])
+        key = str(body.get("key") or (query.get("key") or [""])[0])
+        entry = self._auth(key)
+        if entry is None:
+            return None, None
+        return body, entry
+
+    def post_tag(self):
+        body, entry = self._body_and_entry(MAX_BODY)
+        if body is None:
+            return
+
+        gametype = str(body.get("gametype", ""))
+        if not SLUG_RE.match(gametype):
+            return self._reject("pick a gametype for the tag to live under")
+
+        role = str(body.get("role", ""))
+        if role not in TAG_ROLES:
+            return self._reject("that role isn't on the list")
+
+        note = clean(body.get("note", ""), MAX_NOTE)
+
+        player = body.get("player")
+        if not isinstance(player, dict):
+            return self._reject("no player position attached")
+        name = clean(str(player.get("name", "")), MAX_NAME)
+        x, y, z = (num(player.get(k)) for k in ("x", "y", "z"))
+        heading = num(player.get("heading"), 0.0)
+        if not name or None in (x, y, z):
+            return self._reject("that position doesn't look like coordinates")
+
+        record = {
+            "id": secrets.token_hex(4),
+            "ts": int(time.time()),
+            "gametype": gametype,
+            "role": role,
+            "note": note,
+            "player": name,
+            "x": x, "y": y, "z": z,
+            "heading": heading,
+            "street": clean(str(player.get("street") or ""), 80),
+            "taggedBy": entry["owner"],
+        }
+
+        path = TAGS / f"{gametype}.json"
+        with _lock:
+            tags = read_json_file(path, [])
+            tags = tags if isinstance(tags, list) else []
+            write_json_atomic(path, tags + [record])
+
+        print(f"[scope] tag by {entry['owner']} ({gametype}/{role}) at "
+              f"{x},{y},{z}: {note[:60]}")
+        return self._json({"ok": True, "tag": record})
+
+    def put_scope(self):
+        body, entry = self._body_and_entry(MAX_SCOPE_BODY)
+        if body is None:
+            return
+        owner = entry["owner"]
+
+        slug = str(body.get("slug", ""))
+        if not SLUG_RE.match(slug):
+            return self._reject("slug must be 1-30 of a-z, 0-9 and dashes")
+        form = body.get("form")
+        if not isinstance(form, dict):
+            return self._reject("no form in that")
+        form = sanitise(form)
+
+        now = int(time.time())
+        path = SCOPES / f"{owner}--{slug}.json"
+        with _lock:
+            existing = read_json_file(path, {})
+            existing = existing if isinstance(existing, dict) else {}
+            doc = {
+                "owner": owner,
+                "slug": slug,
+                "name": clean(str(form.get("name") or ""), 80) or slug,
+                "status": existing.get("status", "draft"),
+                "created": existing.get("created", now),
+                "updated": now,
+                "form": form,
+            }
+            write_json_atomic(path, doc)
+
+        return self._json({"ok": True, "updated": now, "status": doc["status"]})
+
+    def post_submit(self):
+        body, entry = self._body_and_entry(MAX_BODY)
+        if body is None:
+            return
+        owner = entry["owner"]
+
+        slug = str(body.get("slug", ""))
+        if not SLUG_RE.match(slug):
+            return self._reject("that slug looks wrong")
+
+        path = SCOPES / f"{owner}--{slug}.json"
+        now = int(time.time())
+        stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime(now))
+        snapshot = SUBMITTED / f"{stamp}-{owner}--{slug}.json"
+        with _lock:
+            doc = read_json_file(path, None)
+            if not isinstance(doc, dict):
+                return self._reject("no such draft", 404)
+            doc = {**doc, "status": "submitted", "updated": now, "submitted": now}
+            write_json_atomic(path, doc)
+            # A fresh snapshot every submit; resubmitting is allowed and each
+            # one is kept, so the pipeline never loses an earlier cut.
+            write_json_atomic(snapshot, doc)
+
+        print(f"[scope] {owner} submitted {slug} -> {snapshot.name}")
+        return self._json({"ok": True, "snapshot": snapshot.name})
+
+
+def main():
+    print(f"[scope] serving {PUBLIC} on {HOST}:{PORT}, data in {DATA}")
+    if not TOKENS.is_file():
+        print(f"[scope] NOTE: {TOKENS} missing - API is 503 until it exists")
+    ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n[scope] stopped")

@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Stokeback Mountain — Tag Board</title>
+<meta name="description" content="Who's on the mountain right now — and where. Tag a spot, make it canon." />
+<meta name="theme-color" content="#0a0c12" />
+<meta name="color-scheme" content="dark" />
+<meta name="robots" content="noindex" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Crect%20width='32'%20height='32'%20rx='7'%20fill='%230a0c12'/%3E%3Cpath%20d='M4%2024L13%2011l4%205%205-8%206%2016z'%20fill='%23ff8a3d'/%3E%3Ccircle%20cx='16'%20cy='9'%20r='3'%20fill='%2339b6ac'/%3E%3C/svg%3E" />
+<style>
+  :root{
+    --bg:#0a0c12; --bg-2:#0e111b; --panel:#121624; --panel-2:#161b2c;
+    --ink:#f6eee1; --muted:#b7ad9d; --dim:#8a8798; --line:rgba(246,238,225,.12);
+    --ember:#ff8a3d; --ember-deep:#e0662a; --ember-soft:#ffb46b;
+    --teal:#39b6ac; --amber:#ffc06a; --rose:#ff8fa0;
+    --danger:#ff7a6b; --good:#5fd0a8;
+    --font-display:"Rockwell","Rockwell Nova","Roboto Slab","Zilla Slab","Bookman Old Style",Georgia,serif;
+    --font-body:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --font-mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--bg); color:var(--ink); font-family:var(--font-body);
+    font-size:16px; line-height:1.55; -webkit-font-smoothing:antialiased}
+  a{color:var(--ember); text-decoration:none}
+  a:hover{color:var(--ember-soft)}
+  h1,h2,h3{font-family:var(--font-display); font-weight:700; line-height:1.05; margin:0}
+  ::selection{background:var(--ember); color:#1a1206}
+  :focus-visible{outline:2px solid var(--ember); outline-offset:3px; border-radius:4px}
+
+  .wrap{width:min(100% - 1.6rem, 860px); margin-inline:auto}
+
+  header{display:flex; align-items:center; justify-content:space-between; gap:.8rem;
+    padding:.9rem 0; border-bottom:1px solid var(--line); flex-wrap:wrap}
+  .brand{display:flex; align-items:center; gap:.6rem; color:var(--ink)}
+  .brand svg{width:30px; height:30px; flex:none}
+  .brand b{font-family:var(--font-display); text-transform:uppercase; letter-spacing:.08em; font-size:.95rem}
+  .brand span{display:block; font-family:var(--font-mono); font-size:.6rem; letter-spacing:.22em;
+    text-transform:uppercase; color:var(--dim)}
+  .navlink{font-family:var(--font-display); font-weight:700; text-transform:uppercase;
+    letter-spacing:.06em; font-size:.78rem; padding:.55em 1em; border:1px solid var(--line);
+    border-radius:9px; background:rgba(246,238,225,.03)}
+  .navlink:hover{border-color:var(--ember); background:rgba(255,138,61,.07)}
+
+  .eyebrow{display:inline-flex; align-items:center; gap:.6em; font-family:var(--font-mono);
+    text-transform:uppercase; letter-spacing:.24em; font-size:.68rem; color:var(--ember); margin:1.6rem 0 .5rem}
+  .eyebrow::before{content:""; width:22px; height:2px; background:var(--ember)}
+  .hint{color:var(--dim); font-size:.85rem; margin:.2rem 0 1rem}
+
+  .banner{display:none; margin-top:1rem; padding:.8em 1em; border-radius:10px; font-size:.92rem;
+    background:rgba(255,122,107,.1); border:1px solid rgba(255,122,107,.35); color:#ffe2dd}
+  .banner.is-show{display:block}
+  .banner.soft{background:rgba(255,192,106,.08); border-color:rgba(255,192,106,.3); color:#ffe9c9}
+
+  .players{display:grid; gap:.7rem; margin-top:.4rem}
+  .player{display:flex; align-items:center; justify-content:space-between; gap:.8rem;
+    padding:.85rem 1rem; border:1px solid var(--line); border-radius:12px;
+    background:linear-gradient(180deg,var(--panel),var(--panel-2))}
+  .player__who b{font-family:var(--font-display); font-size:1.08rem}
+  .player__street{color:var(--amber); font-size:.85rem}
+  .player__pos{font-family:var(--font-mono); font-size:.72rem; color:var(--dim); margin-top:.15rem}
+  .empty{padding:1.4rem 1rem; border:1px dashed var(--line); border-radius:12px;
+    color:var(--dim); font-size:.92rem; text-align:center}
+
+  .btn{display:inline-flex; align-items:center; gap:.5em; font-family:var(--font-display);
+    font-weight:700; text-transform:uppercase; letter-spacing:.06em; font-size:.8rem;
+    padding:.65em 1.1em; border-radius:9px; border:1px solid transparent; cursor:pointer;
+    transition:transform .15s ease, box-shadow .2s ease; white-space:nowrap}
+  .btn--primary{color:#20130a; background:linear-gradient(100deg,var(--ember-soft),var(--ember) 55%,var(--ember-deep));
+    box-shadow:0 6px 18px -8px rgba(255,138,61,.6)}
+  .btn--primary:hover{transform:translateY(-1px)}
+  .btn--ghost{color:var(--ink); background:rgba(246,238,225,.03); border-color:var(--line)}
+  .btn--ghost:hover{border-color:var(--ember); color:var(--ember-soft)}
+  .btn[disabled]{opacity:.55; cursor:progress; transform:none}
+
+  /* tags list */
+  .tagbar{display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; margin:.2rem 0 .8rem}
+  .taglist{display:grid; gap:.55rem}
+  .tag{padding:.7rem .9rem; border:1px solid var(--line); border-radius:10px; background:var(--panel)}
+  .tag__top{display:flex; align-items:baseline; gap:.6rem; flex-wrap:wrap}
+  .tag__role{font-family:var(--font-mono); font-size:.66rem; letter-spacing:.12em; text-transform:uppercase;
+    color:var(--teal); border:1px solid rgba(57,182,172,.4); border-radius:5px; padding:.15em .5em}
+  .tag__gt{font-family:var(--font-mono); font-size:.66rem; letter-spacing:.12em; text-transform:uppercase; color:var(--amber)}
+  .tag__note{margin:.3rem 0 0; font-size:.92rem}
+  .tag__meta{font-family:var(--font-mono); font-size:.7rem; color:var(--dim); margin-top:.3rem}
+
+  select,input[type=text]{width:100%; font:inherit; color:var(--ink); background:var(--bg);
+    border:1px solid var(--line); border-radius:10px; padding:.7em .8em}
+  select:focus,input:focus{outline:none; border-color:var(--ember); box-shadow:0 0 0 3px rgba(255,138,61,.18)}
+  select{appearance:none; -webkit-appearance:none; cursor:pointer;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8' fill='none' stroke='%23ff8a3d' stroke-width='1.6'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5'/%3E%3C/svg%3E");
+    background-repeat:no-repeat; background-position:right .9rem center; background-size:12px; padding-right:2.4rem}
+  select option{background:var(--bg); color:var(--ink)}
+  .tagbar select{width:auto; min-width:170px}
+
+  /* modal */
+  .overlay{position:fixed; inset:0; z-index:50; display:none; align-items:flex-end; justify-content:center;
+    background:rgba(5,7,12,.72); backdrop-filter:blur(3px); padding:0}
+  .overlay.is-open{display:flex}
+  .modal{width:min(100%,560px); max-height:92svh; overflow-y:auto; background:var(--panel);
+    border:1px solid var(--line); border-radius:16px 16px 0 0; padding:1.2rem 1.2rem 1.5rem}
+  @media (min-width:600px){ .overlay{align-items:center; padding:1rem} .modal{border-radius:16px} }
+  .modal h3{font-size:1.25rem}
+  .modal .pos{margin:.7rem 0 1rem; padding:.6rem .8rem; border:1px solid var(--line); border-radius:10px;
+    background:var(--bg-2); font-family:var(--font-mono); font-size:.76rem; color:var(--amber); line-height:1.7}
+  .modal .pos b{color:var(--ink); font-size:.9rem; font-family:var(--font-display); letter-spacing:.02em}
+  .field{margin-bottom:.95rem}
+  .field label{display:block; font-family:var(--font-display); font-weight:700; font-size:.88rem; margin-bottom:.4rem}
+  .field .opt{color:var(--dim); font-weight:400; font-size:.75rem; font-family:var(--font-body)}
+  .modal__foot{display:flex; gap:.7rem; justify-content:flex-end; margin-top:.4rem}
+  .modal .status{margin-top:.8rem; font-size:.9rem; display:none; padding:.7em .9em; border-radius:9px}
+  .modal .status.is-show{display:block}
+  .status.ok{color:#d9fff0; background:rgba(95,208,168,.12); border:1px solid rgba(95,208,168,.4)}
+  .status.err{color:#ffe2dd; background:rgba(255,122,107,.12); border:1px solid rgba(255,122,107,.4)}
+
+  footer{margin:2.6rem 0 1.6rem; color:var(--dim); font-size:.78rem; font-family:var(--font-mono)}
+  .pulse{display:inline-block; width:.55em; height:.55em; border-radius:50%; background:var(--good); margin-right:.45em}
+  @media (prefers-reduced-motion:no-preference){ .pulse{animation:pulse 2s ease-in-out infinite} }
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <a class="brand" href="#" id="brand-link">
+    <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#121624"/><path d="M4 25L13 11l4 5 5-9 6 18z" fill="#ff8a3d"/><circle cx="16" cy="8" r="3" fill="#39b6ac"/></svg>
+    <div><b>Tag Board</b><span>Stokeback Mountain</span></div>
+  </a>
+  <a class="navlink" href="/scope" id="scope-link">Scope form →</a>
+</header>
+
+<p class="banner" id="banner" role="status" aria-live="polite"></p>
+
+<span class="eyebrow">On the mountain right now</span>
+<p class="hint">See a mate stood somewhere useful? Tag the spot before they wander off — a tag is a
+<em>verified</em> coordinate, and the build agents aren't allowed to guess.</p>
+<div class="players" id="players"><div class="empty">Looking for signs of life…</div></div>
+
+<span class="eyebrow">Recent tags</span>
+<div class="tagbar">
+  <select id="tag-filter" aria-label="Filter tags by gametype"><option value="">All gametypes</option></select>
+  <button class="btn btn--ghost" id="tag-refresh" type="button">Refresh</button>
+</div>
+<div class="taglist" id="taglist"><div class="empty">No tags yet. The map remains tragically theoretical.</div></div>
+
+<footer><span class="pulse" id="pulse"></span><span id="foot-note">polling the mountain every 3s</span></footer>
+</div>
+
+<!-- tag modal -->
+<div class="overlay" id="overlay" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+  <div class="modal">
+    <h3 id="modal-title">Tag this spot</h3>
+    <div class="pos" id="modal-pos"></div>
+    <div class="field">
+      <label for="m-gametype">Gametype <span class="opt">— which mode owns this spot</span></label>
+      <select id="m-gametype"></select>
+    </div>
+    <div class="field">
+      <label for="m-role">Role <span class="opt">— what happens here</span></label>
+      <select id="m-role"></select>
+    </div>
+    <div class="field">
+      <label for="m-note">Note <span class="opt">— e.g. “behind the bar, by the crisps” (optional)</span></label>
+      <input type="text" id="m-note" maxlength="300" placeholder="What makes this the spot?" />
+    </div>
+    <div class="modal__foot">
+      <button class="btn btn--ghost" type="button" id="m-cancel">Cancel</button>
+      <button class="btn btn--primary" type="button" id="m-save">Save tag</button>
+    </div>
+    <p class="status" id="m-status" role="status" aria-live="polite"></p>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var KEY = new URLSearchParams(location.search).get('key') || '';
+  var ROLES = ["player spawn","vehicle spawn","ai spawn","objective","item spawn",
+    "round start area","extraction point","safe zone","zone boundary",
+    "shop / interaction","set dressing","director cam","other"];
+
+  var $ = function(id){ return document.getElementById(id); };
+  function esc(s){
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+  function api(path){ return path + (path.indexOf('?') < 0 ? '?' : '&') + 'key=' + encodeURIComponent(KEY); }
+
+  // keep the key in the links between the two pages
+  $('scope-link').href = '/scope?key=' + encodeURIComponent(KEY);
+  $('brand-link').href = '/?key=' + encodeURIComponent(KEY);
+
+  var banner = $('banner');
+  function setBanner(msg, soft){
+    banner.textContent = msg;
+    banner.className = 'banner is-show' + (soft ? ' soft' : '');
+  }
+  function clearBanner(){ banner.className = 'banner'; }
+
+  var stopped = false;
+  if (!KEY){
+    stopped = true;
+    setBanner("No key in the URL — this page runs on ?key=… links. Ask Daz for yours.");
+    $('foot-note').textContent = 'idle — no key';
+    $('pulse').style.background = 'var(--danger)';
+  }
+
+  // ---- players ----
+  var playersEl = $('players');
+  var lastPlayers = [];
+
+  function renderPlayers(list){
+    lastPlayers = list;
+    if (!list.length){
+      playersEl.innerHTML = '<div class="empty">Nobody’s on the mountain. Suspiciously quiet.</div>';
+      return;
+    }
+    playersEl.innerHTML = list.map(function(p, i){
+      var where = p.street ? esc(p.street) + (p.area ? ' · ' + esc(p.area) : '') : (p.area ? esc(p.area) : '');
+      return '<div class="player">' +
+        '<div class="player__who"><b>' + esc(p.name) + '</b>' +
+          (where ? ' <span class="player__street">' + where + '</span>' : '') +
+          '<div class="player__pos">x ' + esc(p.x) + ' · y ' + esc(p.y) + ' · z ' + esc(p.z) +
+          ' · hdg ' + esc(p.heading) + '</div></div>' +
+        '<button class="btn btn--primary" data-i="' + i + '" type="button">Tag</button>' +
+      '</div>';
+    }).join('');
+  }
+
+  playersEl.addEventListener('click', function(ev){
+    var btn = ev.target.closest('button[data-i]');
+    if (!btn) return;
+    var p = lastPlayers[Number(btn.dataset.i)];
+    if (p) openModal(p);
+  });
+
+  function poll(){
+    if (stopped) return;
+    fetch(api('/api/players')).then(function(res){
+      if (res.status === 403 || res.status === 429){
+        stopped = true;
+        setBanner("That key isn't on the list — check your link with Daz.");
+        $('pulse').style.background = 'var(--danger)';
+        $('foot-note').textContent = 'stopped — bad key';
+        return null;
+      }
+      if (res.status === 503){
+        stopped = true;
+        setBanner("The scope box isn't configured yet (no tokens.json). Deep breaths.");
+        return null;
+      }
+      return res.json();
+    }).then(function(d){
+      if (!d) return;
+      if (d.error){
+        setBanner("Game server's not answering — it's either off or sulking. The list will wake up when it does.", true);
+      } else {
+        clearBanner();
+      }
+      renderPlayers(d.players || []);
+    }).catch(function(){
+      setBanner("Can't reach the scope server — check the network and retry.", true);
+    });
+  }
+  poll();
+  setInterval(poll, 3000);
+
+  // ---- gametypes ----
+  var gametypes = [];
+  function loadGametypes(){
+    if (!KEY) return Promise.resolve();
+    return fetch(api('/api/gametypes')).then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(d){
+        if (!d || !d.gametypes) return;
+        gametypes = d.gametypes;
+        var opts = gametypes.map(function(g){
+          var label = g.name + (g.owner && g.owner !== 'sbm' ? ' (' + g.owner + ')' : '');
+          return '<option value="' + esc(g.slug) + '">' + esc(label) + '</option>';
+        }).join('');
+        $('m-gametype').innerHTML = opts;
+        $('tag-filter').innerHTML = '<option value="">All gametypes</option>' + opts;
+      }).catch(function(){});
+  }
+  loadGametypes();
+
+  // ---- recent tags ----
+  var taglistEl = $('taglist');
+  function fmtTime(ts){
+    var d = new Date(ts * 1000);
+    return d.toLocaleDateString(undefined, {day:'numeric', month:'short'}) + ' ' +
+           d.toLocaleTimeString(undefined, {hour:'2-digit', minute:'2-digit'});
+  }
+  function loadTags(){
+    if (!KEY) return;
+    var g = $('tag-filter').value;
+    fetch(api('/api/tags' + (g ? '?gametype=' + encodeURIComponent(g) : '')))
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(d){
+        if (!d) return;
+        var tags = d.tags || [];
+        if (!tags.length){
+          taglistEl.innerHTML = '<div class="empty">No tags yet' + (g ? ' for this gametype' : '') +
+            '. The map remains tragically theoretical.</div>';
+          return;
+        }
+        taglistEl.innerHTML = tags.slice(0, 60).map(function(t){
+          return '<div class="tag">' +
+            '<div class="tag__top"><span class="tag__role">' + esc(t.role) + '</span>' +
+            '<span class="tag__gt">' + esc(t.gametype) + '</span></div>' +
+            (t.note ? '<p class="tag__note">' + esc(t.note) + '</p>' : '') +
+            '<div class="tag__meta">' + esc(t.player) + (t.street ? ' @ ' + esc(t.street) : '') +
+            ' · ' + esc(t.x) + ', ' + esc(t.y) + ', ' + esc(t.z) + ' · hdg ' + esc(t.heading) +
+            ' · by ' + esc(t.taggedBy) + ' · ' + fmtTime(t.ts) + '</div>' +
+          '</div>';
+        }).join('');
+      }).catch(function(){});
+  }
+  $('tag-filter').addEventListener('change', loadTags);
+  $('tag-refresh').addEventListener('click', loadTags);
+  loadTags();
+
+  // ---- tag modal ----
+  var overlay = $('overlay');
+  var snapshot = null;   // the player's position AS OF CLICK TIME
+  var mStatus = $('m-status');
+
+  $('m-role').innerHTML = ROLES.map(function(r){
+    return '<option value="' + esc(r) + '">' + esc(r) + '</option>';
+  }).join('');
+
+  function openModal(p){
+    snapshot = {name:p.name, x:p.x, y:p.y, z:p.z, heading:p.heading, street:p.street || ''};
+    $('modal-pos').innerHTML = '<b>' + esc(p.name) + '</b><br>' +
+      (p.street ? esc(p.street) + (p.area ? ' · ' + esc(p.area) : '') + '<br>' : '') +
+      'x ' + esc(p.x) + ' · y ' + esc(p.y) + ' · z ' + esc(p.z) + ' · heading ' + esc(p.heading) +
+      '<br><span style="color:var(--dim)">frozen at click time — wander freely</span>';
+    $('m-note').value = '';
+    mStatus.className = 'status';
+    loadGametypes();   // pick up any freshly created scopes
+    overlay.classList.add('is-open');
+    $('m-gametype').focus();
+  }
+  function closeModal(){ overlay.classList.remove('is-open'); snapshot = null; }
+
+  $('m-cancel').addEventListener('click', closeModal);
+  overlay.addEventListener('click', function(ev){ if (ev.target === overlay) closeModal(); });
+  document.addEventListener('keydown', function(ev){
+    if (ev.key === 'Escape' && overlay.classList.contains('is-open')) closeModal();
+  });
+
+  $('m-save').addEventListener('click', function(){
+    if (!snapshot) return;
+    var btn = $('m-save');
+    btn.disabled = true;
+    mStatus.textContent = 'Chalking it up…';
+    mStatus.className = 'status is-show';
+    fetch('/api/tag', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        key: KEY,
+        gametype: $('m-gametype').value,
+        role: $('m-role').value,
+        note: $('m-note').value.trim(),
+        player: snapshot
+      })
+    }).then(function(res){
+      return res.json().catch(function(){ return {}; }).then(function(d){ return {ok: res.ok, d: d}; });
+    }).then(function(r){
+      btn.disabled = false;
+      if (r.ok && r.d.ok){
+        mStatus.textContent = 'Tagged. That spot is canon now.';
+        mStatus.className = 'status is-show ok';
+        var g = r.d.tag && r.d.tag.gametype;
+        setTimeout(function(){
+          closeModal();
+          if (g && [].some.call($('tag-filter').options, function(o){ return o.value === g; })){
+            $('tag-filter').value = g;
+          }
+          loadTags();
+        }, 700);
+      } else {
+        mStatus.textContent = (r.d && r.d.error) || 'That didn’t stick — try again.';
+        mStatus.className = 'status is-show err';
+      }
+    }).catch(function(){
+      btn.disabled = false;
+      mStatus.textContent = 'Couldn’t reach the server — try again in a sec.';
+      mStatus.className = 'status is-show err';
+    });
+  });
+})();
+</script>
+</body>
+</html>

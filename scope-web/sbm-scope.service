@@ -1,0 +1,34 @@
+# Install on the scope box (its own slim LXC, Debian 12):
+#   cp sbm-scope.service /etc/systemd/system/
+#   systemctl daemon-reload && systemctl enable --now sbm-scope
+#
+# tokens.json is hand-created at /opt/sbm-scope/data/tokens.json - it is NEVER
+# in the repo and deploy.sh never touches the data dir.
+[Unit]
+Description=Stoke Back Mountain scope board (tag page + scope forms)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/sbm-scope
+# Line-buffered logs so journalctl shows requests as they happen.
+Environment=PYTHONUNBUFFERED=1
+Environment=PORT=8099
+Environment=SCOPE_DATA=/opt/sbm-scope/data
+# Where the FiveM telemetry endpoint lives (the game box). Adjust if it moves.
+Environment=TELEMETRY_URL=http://192.168.0.212:30120/telemetry
+# Set this if the telemetry /players route wants a key; empty sends none.
+Environment=TELEMETRY_KEY=
+ExecStart=/usr/bin/python3 /opt/sbm-scope/server.py
+Restart=on-failure
+RestartSec=5
+# It serves two pages and writes JSON under data/; give it nothing else.
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/sbm-scope/data
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
