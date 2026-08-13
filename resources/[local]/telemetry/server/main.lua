@@ -99,15 +99,13 @@ RegisterCommand('clap', function() clap('manual') end, false)
 -- Fire the clap over HTTP, so a Stream Deck (or any one-button "go live" macro)
 -- can trigger the sync without anyone typing a command in-game. LAN-only in
 -- practice; a token keeps a stray browser request from setting it off.
---   http://<server-ip>:30120/telemetry/clap?key=sbmclap
-local CLAP_KEY = 'sbmclap'
+--   http://<server-ip>:30120/telemetry/clap?key=<telemetry_clap_key>
 
 -- ===== announcements from outside the game =====
 -- The workshop daemon calls this to narrate the build loop in chat: an idea
 -- was heard, a build is ready, a change just went live. Everyone playing sees
 -- it without alt-tabbing, and it lands on camera, which is the point.
---   http://<server-ip>:30120/telemetry/say?key=sbmsay&text=hello&colour=yellow
-local SAY_KEY = 'sbmsay'
+--   http://<server-ip>:30120/telemetry/say?key=<telemetry_say_key>&text=hello&colour=yellow
 
 local COLOURS = {
     yellow = { 245, 200, 66 },
@@ -128,6 +126,15 @@ end
 local function query(path, name)
     local raw = path:match('[?&]' .. name .. '=([^&]*)')
     return raw and urldecode(raw) or nil
+end
+
+-- Route keys live in convars (set in secrets.cfg), never in source: this repo
+-- is public, so a literal here is a key on the internet. An unset convar
+-- disables its route outright - a fresh checkout exposes nothing until the
+-- operator opts in.
+local function keyed(path, name)
+    local key = GetConvar(('telemetry_%s_key'):format(name), '')
+    return key ~= '' and query(path, 'key') == key
 end
 
 -- ===== who is who =====
@@ -202,10 +209,16 @@ end)
 exports('getVoice', function(serverId) return claimed[serverId] end)
 exports('getCrew', function() return crew end)
 
+-- Latest ping per player. Declared up here, above the HTTP handler, so the
+-- /players route captures this local and not a nil global - the same upvalue
+-- trap everyoneDown's comment describes further down. Filled by
+-- telemetry:ping in the live-positions section below.
+local positions = {}
+
 SetHttpHandler(function(req, res)
     local path = req.path or ''
 
-    if path:find('^/roster') and path:find('key=' .. SAY_KEY, 1, true) then
+    if path:find('^/roster') and keyed(path, 'say') then
         local names = query(path, 'names') or ''
         local fresh = {}
 
@@ -233,14 +246,14 @@ SetHttpHandler(function(req, res)
         return
     end
 
-    if path:find('^/clap') and path:find('key=' .. CLAP_KEY, 1, true) then
+    if path:find('^/clap') and keyed(path, 'clap') then
         clap('streamdeck')
         res.writeHead(200, { ['Content-Type'] = 'text/plain' })
         res.send('clap fired\n')
         return
     end
 
-    if path:find('^/say') and path:find('key=' .. SAY_KEY, 1, true) then
+    if path:find('^/say') and keyed(path, 'say') then
         local text = query(path, 'text')
 
         if not text or text == '' then
@@ -260,6 +273,43 @@ SetHttpHandler(function(req, res)
         print(('[telemetry] say: %s'):format(text))
         res.writeHead(200, { ['Content-Type'] = 'text/plain' })
         res.send('said\n')
+        return
+    end
+
+    -- Everyone currently on, as JSON, for tools outside the game (dashboards,
+    -- overlays). Coords/heading come from the server's own entity view - under
+    -- onesync that's live even before a player's first ping. Street/area only
+    -- exist as client natives, so they're relayed from each player's latest
+    -- telemetry:ping snapshot and are omitted until one lands.
+    --   http://<server-ip>:30120/telemetry/players?key=<telemetry_players_key>
+    if path:find('^/players') and keyed(path, 'players') then
+        local players = {}
+
+        for _, src in ipairs(GetPlayers()) do
+            local ped = GetPlayerPed(src)
+
+            -- No ped yet means still connecting; there's no position to report.
+            if ped and ped ~= 0 then
+                local pos  = GetEntityCoords(ped)
+                local snap = positions[tonumber(src)]
+
+                players[#players + 1] = {
+                    src     = tonumber(src),
+                    name    = GetPlayerName(src) or ('#' .. tostring(src)),
+                    x       = math.floor(pos.x * 10) / 10,
+                    y       = math.floor(pos.y * 10) / 10,
+                    z       = math.floor(pos.z * 10) / 10,
+                    heading = math.floor(GetEntityHeading(ped) * 10) / 10,
+                    street  = snap and snap.street or nil,
+                    area    = snap and snap.area or nil,
+                }
+            end
+        end
+
+        res.writeHead(200, { ['Content-Type'] = 'application/json' })
+        -- json.encode renders an empty Lua table as '{}'; an empty server is
+        -- still an array to the caller.
+        res.send(#players > 0 and json.encode(players) or '[]')
         return
     end
 
@@ -374,8 +424,8 @@ end, false)
 -- rewrite, so the radar has been dead). On top of it, a state snapshot every
 -- few seconds records the whole board - mode, mission, wave, and where everyone
 -- was - so an overheard "the zombies are too fast" can be filed alongside the
--- exact situation that prompted it.
-local positions = {}
+-- exact situation that prompted it. (The `positions` table itself is declared
+-- above the HTTP handler, which also reads it.)
 
 RegisterNetEvent('telemetry:ping', function(pos)
     local source = source
