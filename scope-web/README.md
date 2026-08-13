@@ -73,8 +73,16 @@ scope-web/promote-scope.sh submissions/scopes/submitted/<file>.json
 The render is verbatim — the owner's words under fixed headings, locations as
 a coordinate table. Nothing is summarised; that's the house rule.
 
-## HANDOFF
+## Public URLs
 
-Public hostname still to wire: either `scope.dazrave.uk` or a path on
-`sbm.dazrave.uk`, via nginx-master (CT120) or the Cloudflare tunnel. Until
-then the LAN URL works fine: `http://<ct-ip>:8099/?key=<token>`.
+The app shares `sbm.dazrave.uk` with the idea box, path-routed by
+nginx-master (CT120, `/etc/nginx/snippets/sbm-scope.conf`, included from the
+`sbm_dazrave_uk.conf` vhost):
+
+- Tag board: `https://sbm.dazrave.uk/tag?key=<token>`
+- Scope form: `https://sbm.dazrave.uk/scope?key=<token>`
+- `/api/players|gametypes|tag|tags|scope*` → this app; everything else,
+  including `/` and `/api/idea`, stays the idea box on CT212.
+
+The LAN URL also works: `http://<ct-ip>:8099/?key=<token>` (the tag board
+answers at both `/` and `/tag`).

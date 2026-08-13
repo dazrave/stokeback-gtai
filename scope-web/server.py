@@ -292,7 +292,9 @@ class Handler(BaseHTTPRequestHandler):
         return self.serve_static(route)
 
     def serve_static(self, route):
-        if route in ("/", ""):
+        # "/tag" is an alias for "/" so links work both direct (LAN) and
+        # path-routed behind sbm.dazrave.uk, where "/" is the idea box.
+        if route in ("/", "", "/tag"):
             route = "/tag.html"
         elif route == "/scope":
             route = "/scope.html"

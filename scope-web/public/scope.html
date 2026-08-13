@@ -146,7 +146,7 @@
     <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#121624"/><path d="M4 25L13 11l4 5 5-9 6 18z" fill="#ff8a3d"/><rect x="13" y="6" width="8" height="2" fill="#ffc06a"/><rect x="13" y="9" width="6" height="2" fill="#ffc06a"/></svg>
     <div><b>Scope Form</b><span>Stokeback Mountain</span></div>
   </a>
-  <a class="navlink" href="/" id="tag-link">← Tag board</a>
+  <a class="navlink" href="/tag" id="tag-link">← Tag board</a>
 </header>
 
 <p class="banner" id="banner" role="status" aria-live="polite"></p>
@@ -263,7 +263,7 @@
   <div class="section">
     <h3><span class="n">08</span> Locations</h3>
     <p class="quip">Verified spots only — the build agents aren't allowed to guess coordinates.
-      Tag them in game on the <a href="/" id="tag-link-2">tag board</a>, then attach them here.</p>
+      Tag them in game on the <a href="/tag" id="tag-link-2">tag board</a>, then attach them here.</p>
     <div class="field">
       <button class="btn btn--ghost" type="button" id="loc-load">Load tags for this gametype</button>
     </div>
@@ -606,7 +606,7 @@
         var avail = tags.filter(function(t){ return !attached[t.id]; });
         if (!avail.length){
           $('loc-avail').innerHTML = '<div class="empty">No unattached tags under “' + esc(g) +
-            '”. Go stand somewhere meaningful and tag it on the <a href="/?key=' + encodeURIComponent(KEY) + '">tag board</a>.</div>';
+            '”. Go stand somewhere meaningful and tag it on the <a href="/tag?key=' + encodeURIComponent(KEY) + '">tag board</a>.</div>';
           return;
         }
         $('loc-avail').innerHTML = avail.map(function(t){
