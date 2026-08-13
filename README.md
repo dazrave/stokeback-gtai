@@ -96,6 +96,29 @@ the shelf.
 Ships **without a single coordinate**: `/nick start` tells you exactly which
 locations still need tagging on the tag board.
 
+### 🏁 `the-stokeback-triathlon` — run, ride, fly
+
+Somebody organised a triathlon without checking what one is. Everyone starts
+together on a line, and the disciplines escalate.
+
+- **Leg 1, on foot** — a checkpoint course through the city, in order, on your
+  own two feet. Traffic and pedestrians are left switched on, so the number 19
+  bus is part of the obstacle course.
+- **Leg 2, motocross** — identical dirt bikes waiting at the transition. You
+  *run to them*; nobody is teleported into anything. Hills, dirt and ridges,
+  not roads.
+- **Leg 3, biplanes** — the same again with aircraft, then a run of aerial
+  gates that gets progressively less sensible.
+- **Nobody is ever out.** Die, sink a bike, write off a plane: you go back to
+  your last checkpoint with a replacement, and a pilot who has already cleared
+  a gate is put back in the air with the engine running rather than on a
+  hilltop.
+- First over the line wins, and everyone else gets **60 seconds** to finish
+  before a DNF. Nobody finishing at all is scored on how far they got.
+
+Ships **without a single coordinate**: `/tri start` reads out exactly what
+still needs tagging on the tag board.
+
 ### 🤖 `squadmate` — your AI mate
 
 One AI companion each. Follow, hold, be aggressive, copy your weapon, or fetch a
@@ -117,6 +140,7 @@ Type them in chat with a `/`, or in the F8 console without one.
 /wave [n]                                           force the next wave, or jump to wave n
 /chase start | stop                                 one fugitive, everyone else is police
 /nick start | stop                                  Nick of Time: rob the shops, stash it, get out
+/tri start | stop                                   the Stokeback Triathlon: run, ride, fly
 /score                                              horde kill leaderboard
 /resetgame                                          stop everything, respawn everyone somewhere random, together
 ```
@@ -130,6 +154,7 @@ Type them in chat with a `/`, or in the F8 console without one.
 | `F11` | Squadmate: copy the weapon you're holding |
 | `G` | Squadmate: fetch the nearest jerry can |
 | `E` | Interact — pick up / pour jerry cans, loot ammo, arrest (in chase) |
+| `G` | Triathlon: my bike/plane is a smoking hole, send another |
 
 ### Extras
 
@@ -156,6 +181,7 @@ resources/[local]/
 ├── pint/          the campaign: missions, fuel, moments, revives
 ├── chase/         cops and robbers: sight tracking, AI police, reports
 ├── nick-of-time/  the heist: loot drain, alarms, the drifting search circle
+├── the-stokeback-triathlon/  the race: checkpoints, transitions, biplanes
 ├── squadmate/     the AI companion
 ├── infected_dev/  dev tools (god, noclip, wave control) — off for game night
 └── telemetry/     route recording, player list, /resetgame

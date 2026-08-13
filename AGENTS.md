@@ -7,7 +7,8 @@ the change the words literally describe.
 
 Issues are labelled on three axes: a **type** (`new-mode`, `enhance`, `feature`,
 `balance`, `bug`, `chore`), a **mode** (`mode:infected`, `mode:pint`,
-`mode:chase`, `mode:squadmate`, `mode:nick-of-time`, `mode:meta`), and a
+`mode:chase`, `mode:squadmate`, `mode:nick-of-time`,
+`mode:the-stokeback-triathlon`, `mode:meta`), and a
 **handling** label. Only pick
 up `auto`; leave `needs-human` and `unclear` for a person. `scoped` on a
 `new-mode` issue means a human already did the design — the spec lives in
@@ -20,9 +21,10 @@ mates. It is a comedy, not a serious server. The tone is **Shaun of the Dead**: 
 apocalypse, a getaway van that runs out of petrol at the worst moment. Jokes in
 the chat lines are correct and expected.
 
-There are five modes and one companion — read the [README](README.md) for what
-each one is before touching it. `nick-of-time` is the newest and ships without
-a single coordinate: it refuses to start until the tag board has them.
+There are six modes and one companion — read the [README](README.md) for what
+each one is before touching it. `the-stokeback-triathlon` is the newest, and
+like `nick-of-time` it ships without a single coordinate: both refuse to start
+until the tag board has them.
 
 ## How to behave
 
@@ -75,6 +77,11 @@ you touch logic. The levers:
 | the getaway car's cough, fire and fireball | `nick-of-time/config.lua` → `damage` |
 | stars, alarms-per-stash, roadblocks (unbuilt) | `nick-of-time/config.lua` → `escalation` |
 | where the shops, safehouses and spawns are | `nick-of-time/config.lua` → `locations` (tag board only, never guessed) |
+| race length, the post-winner window, the countdown | `the-stokeback-triathlon/config.lua` → `round` |
+| checkpoint radii, bike/plane models, per-leg feel | `the-stokeback-triathlon/config.lua` → `legs` (one block per discipline) |
+| how fussy the wrong-vehicle and on-foot checks are | `the-stokeback-triathlon/config.lua` → `rules` |
+| crash recovery: delay, penalty, the airborne restart | `the-stokeback-triathlon/config.lua` → `respawn`, `vehicles` |
+| the race course itself (checkpoints, transitions, finish) | `the-stokeback-triathlon/config.lua` → `courses` (tag board only, never guessed) |
 
 A new mission or vignette is **data**: add an entry, don't write a new system.
 
