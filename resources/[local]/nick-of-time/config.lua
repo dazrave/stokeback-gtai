@@ -308,6 +308,13 @@ Config = {
         HOLD_MS            = 6000,  -- stay on a target at least this long
         WITNESS_FRESH_S    = 15,    -- a call older than this stops being a lead
         MANUAL_SUPPRESS_MS = 20000, -- a hand-placed waypoint wins, for a bit
+
+        -- (+) The manual half (Darren, game night: "allow a person manual gps
+        -- as well as the one when there's an alarm"). /gps asks dispatch for
+        -- its best RIGHT NOW: drops your own waypoint, ends the suppression,
+        -- rebuilds the route - and control tells you what kind of lead you
+        -- are being routed at. Police only; the robber gets a brush-off.
+        MANUAL_COMMAND = 'gps',
     },
 
     -- ===== robber awareness =====
