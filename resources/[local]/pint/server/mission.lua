@@ -19,6 +19,8 @@ local state = {
     downed           = {}, -- bleeding out: id -> { name, x, y, z, endsAt }
     presence         = {}, -- id -> { inZone, inVehicle, alive }
     playerDistances  = {},
+    securing         = false,
+    secureCleared    = 0,  -- waves put down at the current objective
 }
 
 local function setState(next)
@@ -74,6 +76,22 @@ AddEventHandler('onResourceStart', function(resource)
     if resource == 'core' or resource == GetCurrentResourceName() then
         claimStreets()
     end
+end)
+
+-- Stopping mid-campaign must not strand the apocalypse switched on: core
+-- takes the population claim back by itself, but the wave director and the
+-- engaged flag are pint's to hand back. Guarded on active so redeploying
+-- pint never kills a sandbox /horde run, and pcall'd because a restart of
+-- infected is what usually stops US, at which point its exports are already
+-- half gone.
+AddEventHandler('onResourceStop', function(resource)
+    if resource ~= GetCurrentResourceName() or not state.active then return end
+
+    pcall(function()
+        exports.infected:setRunning(false)
+        exports.infected:setEngaged(false)
+        exports.infected:setIntensity(1.0)
+    end)
 end)
 
 local function tell(message)
@@ -162,11 +180,31 @@ local function runHoldout(stage)
     end)
 end
 
--- Every objective is defended: arriving is not completing. A wave lands, and
--- the area has to be held before the stage counts - with the same rule as the
--- holdout, so the clock stops if everybody hides in a car.
+-- infected announces every wave clear to the server as well as the clients.
+-- While an objective is being secured, each one is a notch on the gate; the
+-- holdout finales run their own wave clock and are deliberately deaf to it.
+AddEventHandler('infected:waveCleared', function()
+    if not (state.active and state.securing) then return end
+
+    local stage = currentStage()
+    local need  = stage and (stage.waveClears or Config.secureWaveClears) or 1
+
+    setState({ secureCleared = state.secureCleared + 1 })
+
+    if state.secureCleared < need then
+        tell(('Wave %d of %d cleared. Hold on - more coming.'):format(state.secureCleared, need))
+    end
+end)
+
+-- Every objective is defended: arriving is not completing. Waves land, and
+-- the stage counts when the crew has CLEARED enough of them - a wave is
+-- cleared when the director says so, same as the sandbox horde. Standing
+-- about for secureSeconds was too rushed a bar; the seconds survive only as
+-- a minimum floor, with the same rule as the holdout, so the clock still
+-- stops if everybody hides in a car.
 local function runSecure(stage, index)
     local seconds = stage.secureSeconds or Config.secureSeconds
+    local need    = stage.waveClears or Config.secureWaveClears
 
     -- Some objectives are their own reward (getting in a car, boarding a
     -- boat): nothing to hold, so don't ask anyone to hold it.
@@ -180,12 +218,18 @@ local function runSecure(stage, index)
     CreateThread(function()
         local remainingMs = seconds * 1000
         local stalledFor  = 0
+        local lastKick    = GetGameTimer()
 
+        -- The director runs while the objective is contested and only then:
+        -- travel stays wave-free. The immediate force also resets the wave
+        -- counters, so a wave the crew already put down out on the road can
+        -- never count towards this gate.
         exports.infected:setRunning(true)
         exports.infected:forceNextWave()
 
         while state.active and state.stageIndex == index and state.securing do
-            local manned = circleManned(stage)
+            local manned  = circleManned(stage)
+            local cleared = state.secureCleared
 
             if manned then
                 remainingMs = remainingMs - 1000
@@ -200,16 +244,27 @@ local function runSecure(stage, index)
             end
 
             TriggerClientEvent('pint:secure', -1,
-                math.max(0, math.ceil(remainingMs / 1000)), not manned)
+                math.max(0, math.ceil(remainingMs / 1000)), not manned, cleared, need)
 
-            if remainingMs <= 0 then
-                setState({ securing = false })
+            if cleared >= need and remainingMs <= 0 then
+                setState({ securing = false, secureCleared = 0 })
                 exports.infected:setRunning(false)
                 TriggerClientEvent('pint:secure', -1, nil, false)
                 TriggerClientEvent('pint:ammo', -1, Config.secureAmmo)
                 tell(stage.done or 'Area secure.')
                 advance(index + 1)
                 return
+            end
+
+            -- A forced wave can fail quietly - nobody ready yet, no ped
+            -- headroom - leaving the counters at zero and the gate waiting on
+            -- a wave that never left the depot. Nudge the director rather
+            -- than soft-lock the campaign.
+            local ok, horde = pcall(function() return exports.infected:getState() end)
+            if ok and horde and horde.spawned == 0
+                and (GetGameTimer() - lastKick) > 8000 then
+                exports.infected:forceNextWave()
+                lastKick = GetGameTimer()
             end
 
             Wait(1000)
@@ -253,7 +308,15 @@ function advance(index)
     local stage = mission.stages[index]
     if not stage then return finish() end
 
-    setState({ stageIndex = index, delivered = 0, regroupIn = {}, securing = false })
+    -- Travel is wave-free, always: whatever the last stage switched on, the
+    -- stage boundary switches off. This is also what keeps /pint skip honest
+    -- - skipping a contested objective must not leave the director running
+    -- into the drive that follows. Holdouts and secures switch it back on
+    -- themselves when they engage.
+    exports.infected:setRunning(false)
+
+    setState({ stageIndex = index, delivered = 0, regroupIn = {},
+               securing = false, secureCleared = 0 })
 
     TriggerClientEvent('pint:stage', -1, state.mission, index)
 
@@ -300,6 +363,8 @@ local function start(name)
         takenStashes     = {},
         downed           = {},
         playerDistances  = {},
+        securing         = false,
+        secureCleared    = 0,
     })
     exports.infected:resetAll()
     exports.infected:setIntensity(mission.intensityFlat or 1.0)
@@ -330,7 +395,7 @@ local function start(name)
 end
 
 local function stop()
-    setState({ active = false, stageIndex = 0 })
+    setState({ active = false, stageIndex = 0, securing = false, secureCleared = 0 })
     exports.infected:setRunning(false)
     exports.infected:setIntensity(1.0)
     -- Hand the streets back. The campaign holds an empty city while it runs.
@@ -345,7 +410,7 @@ end
 local function wipe()
     local name = state.mission
 
-    setState({ active = false, stageIndex = 0 })
+    setState({ active = false, stageIndex = 0, securing = false, secureCleared = 0 })
     exports.infected:setRunning(false)
     exports.infected:setIntensity(1.0)
     TriggerClientEvent('pint:wipe', -1)

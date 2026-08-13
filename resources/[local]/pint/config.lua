@@ -91,10 +91,18 @@ Config = {
 
     -- Bleeding out. Die and you are DOWN, not gone: a mate who reaches the
     -- spot inside the window drags you back up, right where you fell.
-    -- Every objective is defended: reach it and hold it while a wave
-    -- arrives, then collect the payout.
-    secureSeconds = 30,
-    secureAmmo    = 18,
+    -- Every objective is defended: reach it and CLEAR THE WAVES to take it.
+    -- secureWaveClears is how many full waves must go down before a secure
+    -- stage completes (per-stage override: waveClears - the big beats take 2).
+    -- Standing about for secureSeconds was too rushed a bar; now the horde
+    -- decides when you're done, and the seconds survive only as a minimum
+    -- floor. The floor still only ticks while somebody is holding the circle
+    -- - on foot unless the stage says holdInVehicle - so shredding the wave
+    -- from three streets away still means coming back to stand on the spot.
+    -- A stage with secureSeconds = 0 stays instant: no floor, no waves.
+    secureSeconds    = 30,
+    secureWaveClears = 1,
+    secureAmmo       = 18,
 
     reviveSeconds     = 20,  -- how long you bleed out for
     reviveRadius      = 5.0, -- how big the circle is
@@ -162,6 +170,9 @@ Config = {
                 { id = 'hospital', type = 'goto', target = vector3(341.3, -1395.4, 32.5), radius = 30.0,
                   title = 'MEDS FOR GAZ', flavour = 'Gaz got scratched. He says it\'s fine. Get antibiotics anyway.',
                   done = 'Antibiotics acquired. Gaz says he feels "brilliant", which is worrying.',
+                  -- The deep-city beat: heaviest garrisons, closest to
+                  -- downtown, so the pharmacy costs two full waves.
+                  waveClears = 2,
                   ambush = true, reward = 'armour' },
                 { id = 'pier', type = 'goto', target = vector3(-1850.1, -1231.8, 13.0), radius = 35.0,
                   title = 'GET TO THE END OF THE PIER', flavour = 'Down the boardwalk. Don\'t stop to win a goldfish.',

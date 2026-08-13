@@ -188,6 +188,10 @@ CreateThread(function()
             -- never felt like discrete waves.
             if state.wave > 0 then
                 TriggerClientEvent('infected:waveCleared', -1, state.wave)
+                -- Server-side mirror of the same announcement, for other
+                -- resources: pint's secure gate counts these. An export can't
+                -- push "it just happened" across; an event can.
+                TriggerEvent('infected:waveCleared', state.wave)
                 print(('[infected] wave %d cleared'):format(state.wave))
                 TriggerEvent('telemetry:mark', ('horde:wave %d cleared'):format(state.wave))
 

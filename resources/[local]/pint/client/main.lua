@@ -357,7 +357,8 @@ RegisterNetEvent('pint:stage', function(missionName, index)
         },
     })
 
-    PintHUD.set({ objective = data.title, holdout = '__clear', gather = '__clear', regroup = '__clear' })
+    PintHUD.set({ objective = data.title, holdout = '__clear', gather = '__clear',
+                  regroup = '__clear', secure = '__clear', secureWaves = '__clear' })
     PintHUD.notify('~y~' .. data.title .. '~w~ - ' .. data.flavour)
 
     -- Big banner for every new objective. Skipped on the first stage, where
@@ -375,8 +376,20 @@ RegisterNetEvent('pint:holdout', function(remaining)
     PintHUD.set({ holdout = remaining })
 end)
 
-RegisterNetEvent('pint:secure', function(remaining, holding)
-    PintHUD.set({ secure = remaining, secureHeld = holding })
+RegisterNetEvent('pint:secure', function(remaining, holding, cleared, need)
+    -- Waves still outstanding render as a counter; once they are all down
+    -- the line falls back to the plain floor countdown.
+    local waves = (need and (cleared or 0) < need)
+        and ('%d/%d'):format(cleared or 0, need) or '__clear'
+
+    -- nil from the server means the gate is over. Without the explicit
+    -- clear the merge would skip the key and the SECURE line would squat
+    -- on the HUD into the next stage.
+    PintHUD.set({
+        secure      = remaining ~= nil and remaining or '__clear',
+        secureHeld  = holding and true or false,
+        secureWaves = waves,
+    })
 end)
 
 RegisterNetEvent('pint:gather', function(delivered, required)
@@ -416,7 +429,8 @@ local function endMission(winShard)
 
     setState({ active = false, stageIndex = 0, blip = nil })
     PintHUD.set({ objective = '__clear', holdout = '__clear', distance = '__clear',
-                  gather = '__clear', regroup = '__clear', missionName = '__clear' })
+                  gather = '__clear', regroup = '__clear', missionName = '__clear',
+                  secure = '__clear', secureWaves = '__clear' })
 
     -- Back to sandbox rules: auto-respawn on, and anyone still dead gets up.
     exports.spawnmanager:setAutoSpawn(true)
@@ -463,7 +477,8 @@ RegisterNetEvent('pint:wipe', function()
     clearBlip()
     setState({ active = false, stageIndex = 0, blip = nil })
     PintHUD.set({ objective = '__clear', holdout = '__clear', distance = '__clear',
-                  gather = '__clear', regroup = '__clear', missionName = '__clear' })
+                  gather = '__clear', regroup = '__clear', missionName = '__clear',
+                  secure = '__clear', secureWaves = '__clear' })
     PlaySoundFrontend(-1, 'ScreenFlash', 'WastedSounds', true)
     PintHUD.shard('YOU ALL DIED', 'From the top. Gaz is sorry.')
 end)

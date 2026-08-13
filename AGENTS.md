@@ -63,7 +63,7 @@ you touch logic. The levers:
 | mission structure, stages, order, story | `pint/config.lua` → `missions` (data only) |
 | fuel drain, sputter, refuel rate | `pint/config.lua` → `fuel` |
 | revives (time, radius, hold) | `pint/config.lua` → `reviveSeconds/Radius/HoldSeconds` |
-| secure-the-area timers & reward | `pint/config.lua` → `secureSeconds`, `secureAmmo` |
+| secure-the-area wave gate, floor timer & reward | `pint/config.lua` → `secureWaveClears` (per-stage `waveClears`), `secureSeconds`, `secureAmmo` |
 | the random events / vignettes | `pint/client/moments.lua`; list in `pint/config.lua` → `moments` |
 | which cars the crew get | `pint/config.lua` → `crewCars`, `beaterModels` |
 | chase timing, headstart, round length | `chase/config.lua` → top-level seconds |

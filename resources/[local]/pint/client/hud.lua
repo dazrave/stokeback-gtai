@@ -4,7 +4,7 @@ PintHUD = {}
 local state = {
     objective = nil, distance = nil, fuel = nil, refuelling = false,
     holdout = nil, gather = nil, regroup = nil, missionName = nil,
-    secure = nil, secureHeld = false,
+    secure = nil, secureHeld = false, secureWaves = nil,
 }
 
 -- Merge-set. Pass '__clear' to null a field out (plain nil would just be
@@ -58,8 +58,13 @@ CreateThread(function()
             end
 
             if state.secure then
-                line = ('~y~%s ~w~- ~r~SECURE THE AREA %ds%s'):format(
-                    state.objective, state.secure, state.secureHeld and ' ~o~(HELD)' or '')
+                -- Waves first: putting the horde down IS the objective now.
+                -- The floor seconds only surface once every wave is cleared.
+                local gate = state.secureWaves
+                    and ('CLEAR THE WAVES %s'):format(state.secureWaves)
+                    or ('SECURE THE AREA %ds'):format(state.secure)
+                line = ('~y~%s ~w~- ~r~%s%s'):format(
+                    state.objective, gate, state.secureHeld and ' ~o~(HELD)' or '')
             end
 
             if state.gather then
