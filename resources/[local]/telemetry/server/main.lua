@@ -137,6 +137,77 @@ local function keyed(path, name)
     return key ~= '' and query(path, 'key') == key
 end
 
+-- ===== gametype switching =====
+-- Every mode the crew can flip to, in one list: registered gametypes
+-- (exports.core:listGametypes(), the framework's own scheme) plus the
+-- legacy hand-rolled modes that never ported to it, plus a freeroam
+-- pseudo-entry. This list IS the whitelist - POST /mode only ever
+-- ExecuteCommands a string that came from an entry here, never
+-- caller-supplied text.
+--   http://<server-ip>:30120/telemetry/modes?key=<telemetry_mode_key>
+--   http://<server-ip>:30120/telemetry/mode?key=<telemetry_mode_key>&name=<id>[&action=stop]
+--
+-- Deliberately self-contained rather than reusing modeState() further down
+-- this file: that local is declared AFTER SetHttpHandler, so a closure built
+-- here could not see it as an upvalue - the exact nil-upvalue trap
+-- everyoneDown's comment below warns about.
+local function exportedFlag(resource, field)
+    local ok, state = pcall(function() return exports[resource].getState() end)
+    return ok and type(state) == 'table' and state[field] and true or false
+end
+
+local function modeEntries()
+    local entries = {}
+
+    local ok, registered = pcall(function() return exports.core:listGametypes() end)
+    if ok and type(registered) == 'table' then
+        for _, g in ipairs(registered) do
+            entries[#entries + 1] = {
+                id = g.name, label = g.label,
+                running = g.running and true or false,
+                start = g.name .. ' start', stop = g.name .. ' stop',
+            }
+        end
+    end
+
+    -- Legacy modes never registered with core: a static entry each, with
+    -- their real commands and a cheap read of their own exported state.
+    entries[#entries + 1] = {
+        id = 'infected', label = 'Zombie Horde',
+        running = exportedFlag('infected', 'running'),
+        start = 'horde start', stop = 'horde stop',
+    }
+
+    entries[#entries + 1] = {
+        id = 'pint', label = 'The Campaign',
+        running = exportedFlag('pint', 'active'),
+        start = 'pint start', stop = 'pint stop',
+    }
+
+    -- Freeroam isn't a mode so much as the absence of one. resetgame is the
+    -- big red button that actually gets everyone there; there's no separate
+    -- stop for it - stopping freeroam just means picking something else.
+    local anyRunning = false
+    for _, e in ipairs(entries) do
+        if e.running then anyRunning = true end
+    end
+
+    entries[#entries + 1] = {
+        id = 'freeroam', label = 'Free Roam',
+        running = not anyRunning,
+        start = 'resetgame', stop = nil,
+    }
+
+    return entries
+end
+
+local function findModeEntry(id)
+    for _, e in ipairs(modeEntries()) do
+        if e.id == id then return e end
+    end
+    return nil
+end
+
 -- ===== who is who =====
 -- The workshop pushes the list of people currently in the voice server. That
 -- list IS the crew: nobody maintains a roster file, whoever turned up tonight
@@ -310,6 +381,66 @@ SetHttpHandler(function(req, res)
         -- json.encode renders an empty Lua table as '{}'; an empty server is
         -- still an array to the caller.
         res.send(#players > 0 and json.encode(players) or '[]')
+        return
+    end
+
+    -- Every switchable mode, with which one is currently running.
+    --   http://<server-ip>:30120/telemetry/modes?key=<telemetry_mode_key>
+    if path:find('^/modes') and keyed(path, 'mode') then
+        local list = {}
+        for _, e in ipairs(modeEntries()) do
+            list[#list + 1] = { id = e.id, label = e.label, running = e.running }
+        end
+
+        res.writeHead(200, { ['Content-Type'] = 'application/json' })
+        res.send(json.encode(list))
+        return
+    end
+
+    -- Switch the running mode. name is looked up against the SAME list
+    -- /modes serves - never executed as raw text - so this can only ever
+    -- fire a command an entry already carries.
+    --   http://<server-ip>:30120/telemetry/mode?key=<telemetry_mode_key>&name=<id>[&action=stop]
+    -- (checked after /modes on purpose: '/mode' is a prefix of '/modes')
+    if path:find('^/mode') and keyed(path, 'mode') then
+        local function respond(name, action)
+            local entry = name and findModeEntry(name)
+
+            if not entry then
+                res.writeHead(400, { ['Content-Type'] = 'application/json' })
+                res.send(json.encode({ ok = false, error = 'unknown mode' }))
+                return
+            end
+
+            local command = (action == 'stop') and entry.stop or entry.start
+            if not command then
+                res.writeHead(400, { ['Content-Type'] = 'application/json' })
+                res.send(json.encode({ ok = false, error = 'no ' .. tostring(action) .. ' action for ' .. entry.id }))
+                return
+            end
+
+            print(('[telemetry] mode switch -> %s'):format(command))
+            ExecuteCommand(command)
+
+            res.writeHead(200, { ['Content-Type'] = 'application/json' })
+            res.send(json.encode({ ok = true, executed = command }))
+        end
+
+        local qname   = query(path, 'name')
+        local qaction = query(path, 'action') or 'start'
+
+        if qname then
+            respond(qname, qaction)
+        else
+            -- No name on the query string: fall back to a JSON body, same
+            -- shape the scope-web proxy sends. Async - the response goes out
+            -- from inside this callback, not the SetHttpHandler call itself.
+            req.setDataHandler(function(body)
+                local ok, data = pcall(json.decode, body or '')
+                data = (ok and type(data) == 'table') and data or {}
+                respond(data.name, data.action or qaction)
+            end)
+        end
         return
     end
 

@@ -68,6 +68,38 @@
     letter-spacing:.08em; text-transform:uppercase; color:var(--ember-soft)}
   .card__hint[hidden]{display:none}
 
+  /* mode card */
+  .modecard{margin-top:1rem; padding:1.15rem 1.25rem; border:1px solid var(--line); border-radius:14px;
+    background:linear-gradient(180deg,var(--panel),var(--panel-2))}
+  .modecard .kicker{display:block; font-family:var(--font-mono); font-size:.64rem; letter-spacing:.16em;
+    text-transform:uppercase; color:var(--teal); margin-bottom:.4rem}
+  .modecard h3{font-size:1.12rem}
+  .modecard .current{color:var(--muted); font-size:.9rem; margin:.5rem 0 0; line-height:1.5}
+  .modecard .current b{color:var(--ember-soft)}
+  .modes{display:flex; flex-wrap:wrap; gap:.55rem; margin:.9rem 0 0}
+  .mode-note{margin:.9rem 0 0; font-family:var(--font-mono); font-size:.7rem; letter-spacing:.04em;
+    color:var(--dim)}
+
+  .btn{display:inline-flex; align-items:center; gap:.5em; font-family:var(--font-display);
+    font-weight:700; text-transform:uppercase; letter-spacing:.06em; font-size:.8rem;
+    padding:.65em 1.1em; border-radius:9px; border:1px solid transparent; cursor:pointer;
+    transition:transform .15s ease, box-shadow .2s ease; white-space:nowrap}
+  .btn--primary{color:#20130a; background:linear-gradient(100deg,var(--ember-soft),var(--ember) 55%,var(--ember-deep));
+    box-shadow:0 6px 18px -8px rgba(255,138,61,.6)}
+  .btn--primary:hover{transform:translateY(-1px)}
+  .btn--ghost{color:var(--ink); background:rgba(246,238,225,.03); border-color:var(--line)}
+  .btn--ghost:hover{border-color:var(--ember); color:var(--ember-soft)}
+  .btn[disabled]{opacity:.6; cursor:default; transform:none}
+
+  .toast{position:fixed; left:50%; bottom:1.2rem; transform:translateX(-50%) translateY(4px); z-index:60;
+    background:var(--panel-2); border:1px solid rgba(95,208,168,.45); color:#d9fff0;
+    padding:.7em 1.15em; border-radius:999px; font-family:var(--font-mono); font-size:.8rem;
+    box-shadow:0 10px 30px -10px rgba(0,0,0,.6); opacity:0; pointer-events:none;
+    transition:opacity .25s ease, transform .25s ease}
+  .toast[hidden]{display:none}
+  .toast.is-show{opacity:1; transform:translateX(-50%) translateY(0)}
+  .toast.err{border-color:rgba(255,122,107,.5); color:#ffe2dd}
+
   footer{margin:2.6rem 0 1.6rem; color:var(--dim); font-size:.78rem; font-family:var(--font-mono)}
   footer code{color:var(--amber)}
 </style>
@@ -120,9 +152,19 @@
   </a>
 </div>
 
+<section class="modecard" id="modecard">
+  <span class="kicker">Right now</span>
+  <h3>Mode</h3>
+  <p class="current" id="mode-current">Checking what's running&hellip;</p>
+  <div class="modes" id="modes"></div>
+  <p class="mode-note">switching mid-round is legal and traditional.</p>
+</section>
+
 <footer>Game night: Fridays, 20:00 UK &middot; LAN connect <code>connect 192.168.0.212:30120</code></footer>
 
 </div>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
 <script>
 (function(){
@@ -149,12 +191,86 @@
   // AI briefing and the idea box stay key-free on purpose: one's meant for a
   // chatbot, the other's a different app entirely.
 
+  function esc(s){
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  // ---- mode card: who's running what, and a button to change it ----
+  var modesEl = $('modes');
+  var modeCurrentEl = $('mode-current');
+  var switching = false;
+
+  function renderModes(list){
+    if (!list.length){
+      modeCurrentEl.textContent = KEY ? "Can't reach the game box right now." : 'No key on this link yet.';
+      modesEl.innerHTML = '';
+      return;
+    }
+    var running = list.filter(function(m){ return m.running; })[0];
+    modeCurrentEl.innerHTML = running
+      ? 'Currently: <b>' + esc(running.label) + '</b>'
+      : 'Nothing pinned down as running right now.';
+    modesEl.innerHTML = list.map(function(m){
+      return '<button class="btn ' + (m.running ? 'btn--primary' : 'btn--ghost') + '" type="button" ' +
+        'data-mode="' + esc(m.id) + '" data-label="' + esc(m.label) + '"' +
+        (m.running ? ' disabled' : '') + '>' + esc(m.label) + (m.running ? ' — running' : '') + '</button>';
+    }).join('');
+  }
+
+  var toastTimer = null;
+  function showToast(msg, isErr){
+    var el = $('toast');
+    el.hidden = false;
+    el.textContent = msg;
+    el.className = 'toast is-show' + (isErr ? ' err' : '');
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ el.classList.remove('is-show'); }, 2200);
+  }
+
+  modesEl.addEventListener('click', function(ev){
+    var btn = ev.target.closest('button[data-mode]');
+    if (!btn || btn.disabled || switching) return;
+    var id = btn.dataset.mode, label = btn.dataset.label;
+    if (!confirm('Switch to ' + label + '? This ends the current round for everyone.')) return;
+
+    switching = true;
+    btn.disabled = true;
+    fetch('/api/mode', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({key: KEY, name: id})
+    }).then(function(res){
+      return res.json().catch(function(){ return {}; }).then(function(d){ return {ok: res.ok, d: d}; });
+    }).then(function(r){
+      switching = false;
+      if (r.ok && r.d.ok){
+        showToast('Switched to ' + label + '.');
+      } else {
+        showToast((r.d && r.d.error) || "Didn't take — try again.", true);
+      }
+      pollModes();
+    }).catch(function(){
+      switching = false;
+      showToast("Couldn't reach the server — try again.", true);
+    });
+  });
+
+  function pollModes(){
+    if (!KEY) return;
+    fetch(api('/api/modes')).then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(d){ renderModes((d && d.modes) || []); })
+      .catch(function(){});
+  }
+
   // No key yet? The hub is still useful (AI briefing + idea box need none),
   // so it stays up rather than blocking with a full-page note - just a
   // gentle hint, and no doomed /api/profile call.
   if (!KEY){
     $('nokey-hint').hidden = false;
     $('greeting').textContent = 'Alright, stranger.';
+    renderModes([]);
     return;
   }
 
@@ -168,6 +284,9 @@
       var incomplete = !d.updated || !d.discord || !d.colour;
       if (incomplete) $('tag-hint').hidden = false;
     }).catch(function(){});
+
+  pollModes();
+  setInterval(pollModes, 5000);
 })();
 </script>
 </body>

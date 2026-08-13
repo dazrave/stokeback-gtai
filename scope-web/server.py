@@ -43,6 +43,7 @@ HOST = os.environ.get("SCOPE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("PORT", "8099"))
 TELEMETRY_URL = os.environ.get("TELEMETRY_URL", "http://192.168.0.212:30120/telemetry")
 TELEMETRY_KEY = os.environ.get("TELEMETRY_KEY", "")
+TELEMETRY_MODE_KEY = os.environ.get("TELEMETRY_MODE_KEY", "")
 
 MAX_BODY = 8 * 1024          # bytes; a tag is a note, not a novel
 MAX_SCOPE_BODY = 64 * 1024   # bytes; the scope form alone gets the big cap
@@ -227,6 +228,69 @@ def normalise_players(raw) -> list:
     return players
 
 
+def fetch_modes() -> dict:
+    """Ask the game server which modes exist and which one is running now.
+    Same never-break-the-page contract as fetch_players(): any failure at
+    all degrades to an empty list plus a soft error."""
+    url = TELEMETRY_URL.rstrip("/") + "/modes"
+    if TELEMETRY_MODE_KEY:
+        url += "?" + urllib.parse.urlencode({"key": TELEMETRY_MODE_KEY})
+    try:
+        with urllib.request.urlopen(url, timeout=2) as resp:
+            raw = json.loads(resp.read().decode("utf-8", "replace"))
+    except Exception:
+        return {"modes": [], "error": "game server not answering"}
+    return {"modes": normalise_modes(raw)}
+
+
+def normalise_modes(raw) -> list:
+    """telemetry's /modes route already returns a clean [{id,label,running}]
+    array, but the values are still someone else's JSON - clean and cap them
+    the same as everything else that crosses this boundary."""
+    modes = []
+    if not isinstance(raw, list):
+        return modes
+    for row in raw:
+        if not isinstance(row, dict):
+            continue
+        modes.append({
+            "id": clean(str(row.get("id", "")), 30),
+            "label": clean(str(row.get("label") or row.get("id") or ""), 60),
+            "running": bool(row.get("running")),
+        })
+    return modes
+
+
+def switch_mode(name: str, action: str):
+    """POST telemetry's /mode route. Returns (ok, payload) - payload is
+    whatever telemetry replied with, ok is whether it was a 2xx - or None if
+    the game server didn't answer at all. Unlike the read-only proxies this
+    can't just degrade quietly: the caller needs to know whether the switch
+    actually landed.
+
+    The key rides the query string, same as every other telemetry route -
+    telemetry's keyed() helper only ever looks at the URL, never the body."""
+    url = TELEMETRY_URL.rstrip("/") + "/mode"
+    if TELEMETRY_MODE_KEY:
+        url += "?" + urllib.parse.urlencode({"key": TELEMETRY_MODE_KEY})
+    body = json.dumps({"name": name, "action": action}).encode("utf-8")
+    req = urllib.request.Request(
+        url, data=body, method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return True, json.loads(resp.read().decode("utf-8", "replace"))
+    except urllib.error.HTTPError as e:
+        try:
+            payload = json.loads(e.read().decode("utf-8", "replace"))
+        except Exception:
+            payload = {"ok": False, "error": f"telemetry returned {e.code}"}
+        return False, payload
+    except Exception:
+        return None
+
+
 # ---- AI briefing injection ----
 
 AI_CONTEXT_MARKER = b"<!--AI_CONTEXT-->"
@@ -327,6 +391,11 @@ class Handler(BaseHTTPRequestHandler):
             if self._auth(key) is None:
                 return
             return self._json(fetch_players())
+
+        if route == "/api/modes":
+            if self._auth(key) is None:
+                return
+            return self._json(fetch_modes())
 
         if route == "/api/gametypes":
             if self._auth(key) is None:
@@ -515,6 +584,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.post_tag()
         if route == "/api/scope/submit":
             return self.post_submit()
+        if route == "/api/mode":
+            return self.post_mode()
         return self._send(404, b"not found")
 
     def do_PUT(self):
@@ -585,6 +656,30 @@ class Handler(BaseHTTPRequestHandler):
         print(f"[scope] tag by {entry['owner']} ({gametype}/{role}) at "
               f"{x},{y},{z}: {note[:60]}")
         return self._json({"ok": True, "tag": record})
+
+    def post_mode(self):
+        """Token-gated proxy onto telemetry's POST /mode: switch which
+        gametype is running. Any valid token may do this - a mode switch
+        affects the whole server, not one owner's stuff, same as a tag."""
+        body, entry = self._body_and_entry(MAX_BODY)
+        if body is None:
+            return
+
+        name = str(body.get("name", ""))
+        if not SLUG_RE.match(name):
+            return self._reject("that mode id looks wrong")
+
+        action = str(body.get("action") or "start")
+        if action not in ("start", "stop"):
+            return self._reject("action must be start or stop")
+
+        result = switch_mode(name, action)
+        if result is None:
+            return self._reject("game server not answering", 502)
+
+        ok, payload = result
+        print(f"[scope] {entry['owner']} switched mode -> {name} ({action}): {payload}")
+        return self._json(payload, 200 if ok else 400)
 
     def put_scope(self):
         body, entry = self._body_and_entry(MAX_SCOPE_BODY)
