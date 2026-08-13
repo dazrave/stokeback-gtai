@@ -3,3 +3,4 @@ submissions/
 
 # Local dev data (tokens.json must NEVER be committed anywhere).
 data/
+__pycache__/
