@@ -34,6 +34,15 @@ ssh "$PROX" "pct exec $CT -- bash -c '
   exit \$fail
 '"
 
+# `restart` reuses the manifest the server cached at scan time, so a changed
+# fxmanifest.lua (new script files) is silently ignored without this.
+if [ "$#" -gt 0 ]; then
+  echo "==> refreshing resource manifests"
+  ssh "$PROX" "pct exec $CT -- runuser -u fivem -- \
+    tmux send-keys -t $TMUX_SESSION 'refresh' Enter"
+  sleep 2
+fi
+
 for resource in "$@"; do
   echo "==> restarting $resource"
   ssh "$PROX" "pct exec $CT -- runuser -u fivem -- \
