@@ -174,6 +174,9 @@ Config = {
             'Three disciplines. Running, motocross, biplanes. No, that is not what a triathlon is. Yes, we are doing it anyway.',
             'Checkpoints in order. Skipping one does nothing except make you look keen.',
             'No weapons. This is a sporting event, and the insurance was very specific.',
+            -- Take this line out when a real tagged course replaces the
+            -- committee's made-up default in `courses` below.
+            'Course by the committee: drawn up in the pub, walked by nobody. Tag your own at sbm.dazrave.uk/tag and it takes over.',
         },
         GO_LINE      = 'GO. Try to look like athletes.',
 
@@ -316,16 +319,22 @@ Config = {
     },
 
     -- ===== the course =====
-    -- NOTHING IS TAGGED YET, and nothing here may ever be guessed: this repo's
-    -- hard rule is that a coordinate comes from a person stood on the spot
-    -- (AGENTS.md), because a guessed one puts a bike inside a fence and a
-    -- plane in the sky with no wings. They arrive from the tag board
-    -- (https://sbm.dazrave.uk/tag, gametype 'the-stokeback-triathlon') and
-    -- land here as data.
+    -- MADE-UP DEFAULTS, ordered by Darren on game night 2026-08-13: "if we
+    -- don't have spawn points etc, make them up!" That is an explicit owner
+    -- override of the never-guess-a-coordinate rule (AGENTS.md), for this
+    -- block only, so /tri start works tonight. The rule itself still stands:
+    -- real tags from the tag board (https://sbm.dazrave.uk/tag, gametype
+    -- 'the-stokeback-triathlon') land in these same tables and REPLACE this
+    -- course, and the moment they do, nothing in here is guessed again.
     --
-    -- Until then /tri start refuses with the exact list of what is missing.
-    -- The mode builds, deploys and sits there perfectly happily; it just
-    -- cannot start a race.
+    -- The guessing was done with the safety catch on. Run and moto
+    -- checkpoints are 3D radius checks with no ground snap, so every one of
+    -- them reuses a coordinate somebody already stood on - pint's verified
+    -- Paleto Bay and Sandy Shores points - plus the one real tag this mode
+    -- has ever been given: Rory's Mount Chiliad summit. It is moto cp 5.
+    -- Of course it is. Only the air gates are invented outright, and those
+    -- sit at 90-240m over the Alamo Sea and its flat shores, where the 45m
+    -- gate radius forgives everything except an actual crash.
     --
     -- The shape, once tagged (copy the commented line, fill in the numbers):
     --
@@ -345,11 +354,69 @@ Config = {
     courses = {
         default = {
             label = 'The Stokeback Original',
-            start = nil,
+
+            -- Outside the Paleto pub, facing the sea. The same spot pint's
+            -- water-landing regroup uses, so it is known open ground.
+            start = { name = 'Start line - the Paleto pub', x = -292.0, y = 6256.0, z = 31.4, h = 0.0 },
+
             legs  = {
-                run  = { checkpoints = {} },
-                moto = { transition = nil, checkpoints = {} },
-                air  = { transition = nil, checkpoints = {}, finish = nil },
+                -- ~1.7km: up the street, onto the sand, then the whole of
+                -- Paleto beach westward along the waterline. Every z here is a
+                -- pint-verified spawn/garrison/wreck spot, because a running
+                -- ring is 4m in three dimensions and guessing ground height is
+                -- how checkpoints become unclaimable.
+                run  = {
+                    checkpoints = {
+                        { name = 'run cp 1 - up the street',       x = -275.0,  y = 6330.0, z = 32.0 },
+                        { name = 'run cp 2 - beach road east',     x = -160.0,  y = 6560.0, z = 31.0 },
+                        { name = 'run cp 3 - down onto the sand',  x = -260.0,  y = 6720.0, z = 6.0 },
+                        { name = 'run cp 4 - the waterline',       x = -330.0,  y = 6780.0, z = 3.0 },
+                        { name = 'run cp 5 - still the waterline', x = -560.0,  y = 6690.0, z = 4.5 },
+                        { name = 'run cp 6 - more beach',          x = -790.0,  y = 6590.0, z = 6.0 },
+                        { name = 'run cp 7 - the far towel',       x = -1030.0, y = 6480.0, z = 5.0 },
+                        { name = 'run cp 8 - up the dune',         x = -1150.0, y = 6300.0, z = 20.0 },
+                    },
+                },
+
+                -- ~7km: back east along the sand PAST the runners still on
+                -- their leg, off the beach, down the coast highway to the
+                -- trailhead, then over the top of Mount Chiliad - the summit
+                -- is Rory's own tag, the only real one on the board - and
+                -- down the east face into Grapeseed and Sandy Shores, with a
+                -- Yellow Jack drive-past because of course there is.
+                moto = {
+                    transition = { name = 'The bikes - west end of the beach', x = -1350.0, y = 6370.0, z = 8.0, h = 289.0 },
+                    checkpoints = {
+                        { name = 'moto cp 1 - back down the sand',    x = -1030.0, y = 6480.0, z = 5.0 },
+                        { name = 'moto cp 2 - past the runners',      x = -790.0,  y = 6590.0, z = 6.0 },
+                        { name = 'moto cp 3 - off the beach',         x = -450.0,  y = 6560.0, z = 15.0 },
+                        { name = 'moto cp 4 - the coast highway',     x = -680.0,  y = 5990.0, z = 17.0 },
+                        { name = 'moto cp 5 - MOUNT CHILIAD, the top (Rory\'s tag)', x = 441.2, y = 5574.7, z = 793.4 },
+                        { name = 'moto cp 6 - down into Grapeseed',   x = 1687.0,  y = 4929.0, z = 42.1 },
+                        { name = 'moto cp 7 - Marina Drive',          x = 1784.3,  y = 3330.6, z = 41.3 },
+                        { name = 'moto cp 8 - the Yellow Jack drive-past', x = 1975.5, y = 3043.5, z = 46.8 },
+                    },
+                },
+
+                -- Sandy Shores strip, planes facing straight down the runway
+                -- at the sea, then a lap of the Alamo: climb out west, right
+                -- turn up the far shore, high over the Grapeseed farms, a
+                -- McKenzie Field flyby (the airfield they DIDN'T get), then
+                -- descending gates back down to rooftop height over Sandy
+                -- Shores and a red gate over the runway they left from.
+                air  = {
+                    transition = { name = 'The planes - Sandy Shores strip', x = 1747.0, y = 3274.0, z = 41.0, h = 105.0 },
+                    checkpoints = {
+                        { name = 'air gate 1 - climb-out over the shore', x = 1150.0, y = 3150.0, z = 120.0 },
+                        { name = 'air gate 2 - west end of the Alamo',    x = 700.0,  y = 3500.0, z = 180.0 },
+                        { name = 'air gate 3 - the north-west shore',     x = 1000.0, y = 4200.0, z = 220.0 },
+                        { name = 'air gate 4 - high over the farms',      x = 1750.0, y = 4600.0, z = 240.0 },
+                        { name = 'air gate 5 - McKenzie Field flyby',     x = 2121.0, y = 4796.0, z = 200.0 },
+                        { name = 'air gate 6 - Galilee, descending',      x = 2150.0, y = 4000.0, z = 150.0 },
+                        { name = 'air gate 7 - low over Sandy Shores',    x = 2000.0, y = 3320.0, z = 90.0 },
+                    },
+                    finish = { name = 'Finish gate - over the runway', x = 1770.0, y = 3280.0, z = 55.0 },
+                },
             },
         },
     },
