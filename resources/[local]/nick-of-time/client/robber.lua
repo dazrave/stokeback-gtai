@@ -12,6 +12,7 @@ local memo = {
     nextStutter = 0,
     coughs      = 0,   -- which of her lines she is on
     hidden      = false,
+    asked       = false, -- a vanish request is in flight; wait for the verdict
     inHouse     = 0,   -- game time we entered a safehouse zone
     pressure    = 0,
     pressureAt  = 0,
@@ -21,6 +22,13 @@ local memo = {
 local function isRobber()
     local role, status = NickState()
     return role == 'robber' and status.phase == 'active'
+end
+
+-- Read by patrol.lua: a client in the safehouse bucket creates entities in
+-- the safehouse bucket, so nothing may be spawned while this is true - a
+-- patrol car nobody can see is not pressure, it is a haunting.
+function NickVanished()
+    return memo.hidden
 end
 
 local function nearest(list, radius)
@@ -169,8 +177,13 @@ end)
 -- entire force can drive through the doorway and never know - and it is
 -- granted by the server, so this only ever ASKS.
 --
--- The clear window is the whole point: dive in while somebody has eyes on you
--- and nothing happens, because they watched you do it.
+-- The clear window is the whole point, and the SERVER referees it: it holds
+-- the only truthful copy of "is anyone looking". Stand in the zone for the
+-- window, ask, and either vanish (nick:hidden) or get the loud SPOTTED
+-- (nick:spotted) and have to lose them first. This client used to judge the
+-- window itself off a broadcast contact state - which meant the police
+-- picture had to be sent to the robber's machine, and acceptance test 9
+-- frowns on handing the fox the hunt's map.
 CreateThread(function()
     while true do
         Wait(200)
@@ -182,7 +195,7 @@ CreateThread(function()
                 memo.hidden = false
                 TriggerServerEvent('nick:vanish', false)
             end
-            memo.inHouse = 0
+            memo.inHouse, memo.asked = 0, false
         else
             local ped   = PlayerPedId()
             local house = not IsPedInAnyVehicle(ped, false)
@@ -191,17 +204,13 @@ CreateThread(function()
             if house then
                 if memo.inHouse == 0 then memo.inHouse = GetGameTimer() end
 
-                local clear = status.contact ~= 'hard'
-                if not clear then memo.inHouse = GetGameTimer() end
-
-                if not memo.hidden and clear
+                if not memo.hidden and not memo.asked
                     and GetGameTimer() - memo.inHouse >= Config.safehouses.SAFEHOUSE_ENTRY_CLEAR_MS then
-                    memo.hidden = true
+                    memo.asked = true
                     TriggerServerEvent('nick:vanish', true)
-                    NickHUD.notify('~g~You are off the street.~w~ Let them drive past.')
                 end
             else
-                memo.inHouse = 0
+                memo.inHouse, memo.asked = 0, false
 
                 if memo.hidden then
                     memo.hidden = false
@@ -211,6 +220,25 @@ CreateThread(function()
             end
         end
     end
+end)
+
+-- The verdicts. Granted: he is in the safehouse bucket and off every screen.
+RegisterNetEvent('nick:hidden', function()
+    if not isRobber() then return end
+
+    memo.hidden = true
+    memo.asked  = false
+    NickHUD.notify('~g~You are off the street.~w~ Let them drive past.')
+end)
+
+-- Refused: somebody watched him walk in, so nothing happened except the
+-- doorway getting warmer. The window restarts - lose them, then try again.
+RegisterNetEvent('nick:spotted', function()
+    if not isRobber() then return end
+
+    memo.asked   = false
+    memo.inHouse = GetGameTimer()
+    NickHUD.notify('~r~SPOTTED.~w~ They watched you walk in. Lose them first.')
 end)
 
 -- ===== hauled out of the car =====
@@ -271,7 +299,13 @@ CreateThread(function()
                 local ceiling = (P.PRESSURE_STATES - 1) * P.PRESSURE_AI_CONTRIBUTION
                 local ai      = math.min(NickPatrolCount(P.PRESSURE_RADIUS) * P.PRESSURE_AI_CONTRIBUTION, ceiling)
 
-                memo.pressure = math.min(P.PRESSURE_STATES - 1, math.floor(close + ai))
+                -- Rounded, not floored. The AI term is always under one whole
+                -- state (the cap is a third of a two-step bar), so a floor
+                -- threw it away entirely and the patrols never moved the
+                -- needle at all. Rounding lets a pair of them register as
+                -- SOMEONE IS CLOSE while the top of the bar still needs an
+                -- actual human in it.
+                memo.pressure = math.min(P.PRESSURE_STATES - 1, math.floor(close + ai + 0.5))
             end
         else
             memo.pressure = 0
@@ -357,6 +391,8 @@ CreateThread(function()
 
             if vehicle ~= 0 and GetPedInVehicleSeat(vehicle, -1) == ped then
                 if vehicle ~= memo.lastVehicle then
+                    local firstCar = memo.lastVehicle == 0
+
                     -- A fresh car is a fresh set of chances, and a fresh voice.
                     memo.lastVehicle = vehicle
                     memo.bodyHealth  = GetVehicleBodyHealth(vehicle)
@@ -369,7 +405,12 @@ CreateThread(function()
                     -- A witnessed event, and the one the plan calls out by
                     -- name (§4.3, open question 4): changing cars in front of
                     -- people is how the police find out you changed cars.
-                    NickWitness('swap')
+                    -- Except the round's FIRST car, which is the one the mode
+                    -- handed him at spawn: nobody phones in a man getting
+                    -- into his own motor, and a 999 pin on the spawn in the
+                    -- opening seconds would hand the police the one thing
+                    -- the muster points were placed not to know.
+                    if not firstCar then NickWitness('swap') end
                 end
 
                 local body   = GetVehicleBodyHealth(vehicle)
@@ -390,8 +431,12 @@ CreateThread(function()
 
                 -- On her last legs: the engine cuts out in little bursts, so
                 -- every junction becomes a question. Her commentary escalates
-                -- through Config.damage.COUGH_LINES in order and loops.
-                if engine <= Config.damage.DAMAGE_STUTTER_THRESHOLD and not memo.onFire
+                -- through Config.damage.COUGH_LINES in order and loops. Not
+                -- once she is DEAD, though - a corpse does not cough, and the
+                -- stutter's restart half was quietly turning a dead engine
+                -- back on every couple of seconds.
+                if engine <= Config.damage.DAMAGE_STUTTER_THRESHOLD
+                    and not memo.dead and not memo.onFire
                     and GetGameTimer() >= memo.nextStutter then
                     memo.nextStutter = GetGameTimer() + Config.damage.STUTTER_EVERY_MS
 

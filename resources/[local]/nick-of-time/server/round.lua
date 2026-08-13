@@ -18,6 +18,7 @@ local state = {
     lastContact = 'cold', -- for control's radio commentary
     radioAt     = 0,      -- next moment control is allowed to speak
     heliOffered = false,  -- control has told them the favour is available
+    lastStars   = 0,      -- for control's star-up commentary
 }
 
 local function setState(next)
@@ -195,6 +196,7 @@ local function onStart()
         lastContact = 'cold',
         radioAt     = 0,
         heliOffered = false,
+        lastStars   = 0,
     }
 
     local firstCop = nil
@@ -251,8 +253,13 @@ local function announce(events)
             TriggerClientEvent('nick:purseNote', state.robber, ('%s is cleaned out.'):format(event.name or 'The shop'))
 
         elseif event.kind == 'car' then
-            tell(('He cashed a %s in somewhere. That is £%s of somebody else\'s car.'):format(
-                event.model or 'car', event.value or 0))
+            -- The paperwork, read like a logbook entry. Lines live in config
+            -- with the rest of the retelling; the fallback is only for a
+            -- config stripped bare.
+            local lines = Config.flavour.CAR_LINES
+            local line  = (lines and #lines > 0) and lines[math.random(#lines)]
+                or 'He cashed a %s in somewhere. That is £%s of somebody else\'s car.'
+            tell(line:format(event.model or 'car', event.value or 0))
 
         -- ===== escalation =====
         elseif event.kind == 'relay' then
@@ -300,9 +307,17 @@ local function onTick()
     -- momentarily unreadable the merge keeps the last good fix.
     setState({ pos = robberPos() })
 
+    -- Vanished means vanished. While he is in the safehouse bucket nothing is
+    -- on anyone's street to be seen, so a patrol parked by the doorway must
+    -- not keep a hard lock pinned on it - or even a relay line on the radio -
+    -- because that would burn the safehouse before the stash does, and
+    -- reveal-on-use is the stash's price, not the patrol's gift. Escalation
+    -- simply gets no position while he is off the street.
+    local hidden = state.robber and (GetPlayerRoutingBucket(state.robber) or 0) ~= 0
+
     -- Patrol positions, the contact score, the helicopter's own clock and the
     -- 999 calls that have finished ringing.
-    NickEscalation.tick(dt, state.pos, NickDetect.contact())
+    NickEscalation.tick(dt, not hidden and state.pos or nil, NickDetect.contact(), state.robber)
 
     -- ONE DETECTION RULE (pillar 1). The bonus helicopter's ping and a patrol
     -- car's proximity relay do not get a private line to the map: they produce
@@ -310,7 +325,7 @@ local function onTick()
     -- home or the patrol falls behind the picture decays through the same
     -- drifting circle instead of switching off. The air ping wins where both
     -- are live, because it is the one that ignores cover.
-    if state.pos then
+    if state.pos and not hidden then
         if NickEscalation.pinging() then
             NickDetect.sighting(state.pos, 'air')
         elseif NickEscalation.relaying() then
@@ -368,6 +383,14 @@ local function onTick()
         if lines then radio(lines) end -- radio() owns the throttle
     end
 
+    -- The star-up sting. Every star is one he chose to earn by banking
+    -- (pillar 4), so control gets to be pointed about it - once per star,
+    -- through the same throttle as everything else control says.
+    if stars > (state.lastStars or 0) then
+        setState({ lastStars = stars })
+        radio(Config.flavour.RADIO_STARS)
+    end
+
     -- The number that makes a spectator sport of it. Everyone sees it, which
     -- is the point: the room knows how badly it is going before he does.
     if Config.round.SHOW_DELTA_TO_COPS and leader then
@@ -375,25 +398,37 @@ local function onTick()
         status.delta  = leader.total - (mine + NickHeist.stashed())
     end
 
-    TriggerClientEvent('nick:status', -1, status)
+    -- The robber's copy of the status has the entire detection picture
+    -- stripped before it leaves the server. His stock client never drew any
+    -- of it, but "where do the police THINK I am" broadcast to his machine
+    -- was a wallhack waiting for a modded client to render it - and the
+    -- pressure meter exists precisely so he gets a feeling, never the map.
+    local robberStatus = {}
+    for key, value in pairs(status) do robberStatus[key] = value end
+    robberStatus.contact, robberStatus.via, robberStatus.track        = nil, nil, nil
+    robberStatus.radius, robberStatus.heading, robberStatus.unseenFor = nil, nil, nil
+    robberStatus.relay, robberStatus.heliActive                       = nil, nil
+
+    -- The police-only channel. The lit helicopter button is deliberately NOT
+    -- in the shared status: "their heli is available" is the same sentence as
+    -- "they have completely lost you", and he is never told that in words.
+    local forPolice = NickEscalation.policePublish()
+
+    for _, src in ipairs(GetPlayers()) do
+        local id = tonumber(src)
+
+        if id == state.robber then
+            TriggerClientEvent('nick:status', id, robberStatus)
+        elseif id then
+            TriggerClientEvent('nick:status', id, status)
+            TriggerClientEvent('nick:police', id, forPolice)
+        end
+    end
 
     -- His own numbers go to him and to nobody else: a carried total on a
     -- police HUD would be a live position update in disguise.
     if state.robber then
         TriggerClientEvent('nick:purse', state.robber, NickHeist.purse(robberVehicle()))
-    end
-
-    -- And the police get theirs. The lit helicopter button is deliberately NOT
-    -- in the shared status: "their heli is available" is the same sentence as
-    -- "they have completely lost you", and the pressure meter exists precisely
-    -- so he never gets told that in words.
-    local forPolice = NickEscalation.policePublish()
-
-    for _, src in ipairs(GetPlayers()) do
-        local id = tonumber(src)
-        if id and id ~= state.robber then
-            TriggerClientEvent('nick:police', id, forPolice)
-        end
     end
 
     -- Control offers the favour once, when it first becomes available.

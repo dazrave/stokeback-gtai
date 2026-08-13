@@ -200,8 +200,10 @@ CreateThread(function()
 
             -- They arrive over time. Six cars materialising the second he
             -- banks his fifth grand would read as a punishment; one at a time
-            -- reads as the net closing.
-            if #units.patrols < target and now >= units.nextSpawn then
+            -- reads as the net closing. Never spawned from inside the
+            -- safehouse bucket: this client's entities land in ITS bucket,
+            -- and a patrol nobody can see is not pressure, it is a haunting.
+            if #units.patrols < target and now >= units.nextSpawn and not NickVanished() then
                 units.nextSpawn = now + E.AI_SPAWN_EVERY_MS
                 spawnPatrol(me, ped)
             end
@@ -216,6 +218,7 @@ end)
 RegisterNetEvent('nick:heliUp', function()
     if not isRobber() then return end
     if units.heli then return end
+    if NickVanished() then return end -- theatre only; the ping does not need the aircraft
 
     local ped = PlayerPedId()
     local me  = GetEntityCoords(ped)

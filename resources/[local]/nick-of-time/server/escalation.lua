@@ -27,12 +27,14 @@ local E = Config.escalation
 local state = {
     patrols     = {}, -- [vehNet] = { veh = net, ped = net, at = ms }
     heli        = nil, -- { veh = net, ped = net, endsAt = ms }
+    cars        = {}, -- [vehNet] = true: script cars, swept if their owner leaves
     relay       = false,
     contactMs   = 0,
     elapsedMs   = 0,
     heliUses    = 0,
     pingUntil   = 0,
     witnesses   = {}, -- pending calls, delivered late like a real 999
+    witnessAt   = 0,  -- earliest moment the next call is accepted
     events      = {},
 }
 
@@ -82,14 +84,33 @@ function NickEscalation.reset()
     state = {
         patrols   = {},
         heli      = nil,
+        cars      = {},
         relay     = false,
         contactMs = 0,
         elapsedMs = 0,
         heliUses  = 0,
         pingUntil = 0,
         witnesses = {},
+        witnessAt = 0,
         events    = {},
     }
+end
+
+-- Is any PLAYER sat in this vehicle's seats? A script car with somebody still
+-- driving it between rounds belongs to that somebody's own tracker (which
+-- sweeps it at the next deal); everything else is litter.
+local function playerSeated(vehicle)
+    for _, src in ipairs(GetPlayers()) do
+        local id  = tonumber(src)
+        local ped = id and GetPlayerPed(id)
+
+        if ped and ped ~= 0 and DoesEntityExist(ped)
+            and GetVehiclePedIsIn(ped) == vehicle then
+            return true
+        end
+    end
+
+    return false
 end
 
 -- Everything this round put into the world, gone. Called on round end AND on
@@ -107,7 +128,16 @@ function NickEscalation.sweep()
         bin(state.heli.veh)
     end
 
-    setState({ patrols = {}, heli = nil, relay = false, pingUntil = 0 })
+    -- Script cars whose spawning client is still here get swept by that
+    -- client's own tracker; this pass exists for the ones whose owner
+    -- disconnected mid-round (the fleet, the getaway car, a relief cruiser),
+    -- which would otherwise migrate to whoever was nearby and live forever.
+    for netId in pairs(state.cars) do
+        local car = resolve(netId)
+        if car and not playerSeated(car) then DeleteEntity(car) end
+    end
+
+    setState({ patrols = {}, heli = nil, cars = {}, relay = false, pingUntil = 0 })
 end
 
 -- ===== stars into patrols =====
@@ -120,6 +150,14 @@ end
 
 function NickEscalation.registerPatrol(vehNet, pedNet)
     if not vehNet then return end
+    if state.patrols[vehNet] then return end
+
+    -- Belt on the cap. The client we shipped stops at AI_CARS_MAX; anything
+    -- registering meaningfully past it is not the client we shipped, and an
+    -- unbounded table here is unbounded work in every tick.
+    local count = 0
+    for _ in pairs(state.patrols) do count = count + 1 end
+    if count >= E.AI_CARS_MAX * 2 then return end
 
     local patrols = {}
     for id, patrol in pairs(state.patrols) do patrols[id] = patrol end
@@ -131,12 +169,41 @@ end
 function NickEscalation.dropPatrol(vehNet)
     if not vehNet or not state.patrols[vehNet] then return end
 
+    -- Deleted here as well as trusted to the client. The client asks for a
+    -- despawn it sometimes cannot perform - the entity can be outside its
+    -- routing bucket (the safehouse dive) or scoped out after an ownership
+    -- migration - and a car the server deregisters without deleting is an
+    -- orphan with paperwork. bin() no-ops when the client already managed it.
+    local patrol = state.patrols[vehNet]
+    bin(patrol.ped)
+    bin(patrol.veh)
+
     local patrols = {}
-    for id, patrol in pairs(state.patrols) do
-        if id ~= vehNet then patrols[id] = patrol end
+    for id, kept in pairs(state.patrols) do
+        if id ~= vehNet then patrols[id] = kept end
     end
 
     setState({ patrols = patrols })
+end
+
+-- Script cars (the fleet, the getaway car, relief cruisers) are reported by
+-- network id exactly like the patrols, so the whistle can sweep a car whose
+-- spawning client has disconnected - the one case its own tracker cannot
+-- cover, and the way acceptance test 8 quietly fails on a Thursday.
+function NickEscalation.registerCar(netId)
+    if not netId or state.cars[netId] then return end
+
+    -- A bound, not a budget: an evening of relief cars never gets near it,
+    -- and a modded client does not get an unbounded server table.
+    local count = 0
+    for _ in pairs(state.cars) do count = count + 1 end
+    if count >= 64 then return end
+
+    local cars = {}
+    for id in pairs(state.cars) do cars[id] = true end
+    cars[netId] = true
+
+    setState({ cars = cars })
 end
 
 function NickEscalation.registerHeli(vehNet, pedNet)
@@ -148,13 +215,18 @@ end
 -- or simply near enough to be a problem. A LOW score is what unlocks the
 -- helicopter, because the favour exists for a team chasing a rumour, not for a
 -- team already sat on his bumper.
-local function accrue(dt, contact, robber)
+local function accrue(dt, contact, robber, robberId)
     local held = contact == 'hard'
 
     if not held and robber then
         for _, src in ipairs(GetPlayers()) do
             local id = tonumber(src)
-            local ped = id and GetPlayerPed(id)
+
+            -- The robber is not "in contact" with himself. Counting his own
+            -- ped (zero metres from his own position, every tick) held the
+            -- score at 1.0 for the whole round, which quietly deleted the
+            -- bonus helicopter from the mode - it unlocks on a LOW score.
+            local ped = id and id ~= robberId and GetPlayerPed(id)
 
             if ped and ped ~= 0 and DoesEntityExist(ped) then
                 local gap = #(GetEntityCoords(ped) - vector3(robber.x, robber.y, robber.z))
@@ -212,6 +284,11 @@ end
 function NickEscalation.witness(pos, kind)
     if not Config.witness.ENABLED or not pos then return end
 
+    -- The client holds this gap too, but the server is the copy that cannot
+    -- be modded: one call per GAP_S however hard the event is spammed, or a
+    -- bad actor could paper the map (config: "or a bad driver is a tracker").
+    if GetGameTimer() < state.witnessAt then return end
+
     local band  = Config.witness.DELAY_S
     local delay = math.random(band[1], band[2]) * 1000
 
@@ -223,15 +300,18 @@ function NickEscalation.witness(pos, kind)
         x = pos.x, y = pos.y, z = pos.z,
     }
 
-    setState({ witnesses = pending })
+    setState({
+        witnesses = pending,
+        witnessAt = GetGameTimer() + Config.witness.GAP_S * 1000,
+    })
 end
 
 -- ===== the tick =====
 -- Called once a second from round.lua with the server's own read of where he
 -- is. Returns nothing: everything it decides comes back out through publish()
 -- and drain(), so there is exactly one place that talks.
-function NickEscalation.tick(dt, robber, contact)
-    accrue(dt, contact, robber)
+function NickEscalation.tick(dt, robber, contact, robberId)
+    accrue(dt, contact, robber, robberId)
 
     -- Patrols: measured HERE, off the server's own copy of the entities, so
     -- the relay cannot be suppressed by the one client with a reason to.

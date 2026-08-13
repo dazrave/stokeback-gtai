@@ -11,6 +11,15 @@
 -- is reached through the NickRound accessors rather than by moving the state
 -- itself: exactly one file owns the phase, and it is the one running the clock.
 
+-- While he is in the safehouse bucket he is not on anyone's street: a stock
+-- client cannot even resolve his ped, so anything claiming to see, cuff or
+-- jack a vanished man is a modded client fishing. Checked on the server's own
+-- bucket read, like every other fact worth checking.
+local function robberVanished()
+    local robber = NickRound.robber()
+    return robber and (GetPlayerRoutingBucket(robber) or 0) ~= 0
+end
+
 -- ===== eyes =====
 -- The one input in the entire mode that produces the truth. The event is just
 -- "I can see him" - the server reads the position off its own copy of his ped.
@@ -19,6 +28,7 @@
 RegisterNetEvent('nick:see', function()
     local src = source
     if NickRound.phase() ~= 'active' or src == NickRound.robber() then return end
+    if robberVanished() then return end
 
     local cop    = GetPlayerPed(src)
     local robber = NickRound.robberPed()
@@ -94,6 +104,7 @@ end)
 RegisterNetEvent('nick:arrest', function()
     local src = source
     if NickRound.phase() ~= 'active' or src == NickRound.robber() then return end
+    if robberVanished() then return end
 
     local cop    = GetPlayerPed(src)
     local robber = NickRound.robberPed()
@@ -116,6 +127,7 @@ end)
 RegisterNetEvent('nick:jack', function()
     local src = source
     if NickRound.phase() ~= 'active' or src == NickRound.robber() then return end
+    if robberVanished() then return end
 
     local cop    = GetPlayerPed(src)
     local robber = NickRound.robberPed()
@@ -175,6 +187,17 @@ RegisterNetEvent('nick:heliUpAck', function(vehNet, pedNet)
     NickEscalation.registerHeli(tonumber(vehNet), tonumber(pedNet))
 end)
 
+-- Script cars - the muster fleet, the getaway car, relief cruisers - reported
+-- by network id like the patrols are, from whichever client spawned one. The
+-- client's own tracker is still the first sweep; the server's copy exists for
+-- the client that disconnects mid-round, whose cars would otherwise migrate
+-- to whoever was stood nearby and outlive the round (acceptance test 8).
+RegisterNetEvent('nick:carUp', function(netId)
+    if NickRound.phase() == 'idle' then return end
+
+    NickEscalation.registerCar(tonumber(netId))
+end)
+
 -- Any copper can call the favour in; it is team-wide and it is one use.
 RegisterNetEvent('nick:heliCall', function()
     local src = source
@@ -209,7 +232,21 @@ RegisterNetEvent('nick:vanish', function(hidden)
     if hidden then
         if NickRound.phase() ~= 'active' then return end
         if not NickHeist.nearHouse(NickRound.pos()) then return end
+        if NickRound.vehicle() then return end -- the dive is on foot, by definition
+
+        -- The clear window, refereed on the server's own picture. Hard
+        -- contact means somebody is watching him do it - a copper's eyes, a
+        -- patrol by the door, the helicopter's ping - and entry under
+        -- observation gets the loud SPOTTED instead of the vanish (plan
+        -- §4.4). The client used to judge this itself off the broadcast
+        -- contact state, which was both a leak and an honesty system.
+        if NickDetect.contact() == 'hard' then
+            return TriggerClientEvent('nick:spotted', src)
+        end
+
+        SetPlayerRoutingBucket(src, Config.safehouses.HIDDEN_BUCKET)
+        return TriggerClientEvent('nick:hidden', src)
     end
 
-    SetPlayerRoutingBucket(src, hidden and Config.safehouses.HIDDEN_BUCKET or 0)
+    SetPlayerRoutingBucket(src, 0)
 end)

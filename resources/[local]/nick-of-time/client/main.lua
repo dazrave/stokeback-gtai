@@ -83,6 +83,22 @@ end
 local loadModel = SBM.loadModel
 local roundCars = SBM.tracker()
 
+-- Every script car goes to the server by network id, the way the patrols do.
+-- The local tracker is still the first sweep; the server's copy exists for
+-- the one case a tracker cannot cover - this client disconnecting mid-round,
+-- after which its cars migrate to whoever was stood nearby and would outlive
+-- the round (acceptance test 8 counts cars too). police.lua uses it for the
+-- relief cruisers.
+function NickReportCar(vehicle)
+    if not vehicle or not DoesEntityExist(vehicle) then return end
+
+    local netId = NetworkGetNetworkIdFromEntity(vehicle)
+    if not netId or netId == 0 then return end
+
+    SetNetworkIdCanMigrate(netId, true)
+    TriggerServerEvent('nick:carUp', netId)
+end
+
 -- Puts a vehicle down flat on the road. Creating one at a guessed height drops
 -- it in and GTA happily lands it on its roof.
 local function placeVehicle(hash, x, y, z, heading)
@@ -111,6 +127,8 @@ local function placeVehicle(hash, x, y, z, heading)
     SetVehiclePetrolTankHealth(vehicle, 1000.0)
     Wait(50)
     SetVehicleOnGroundProperly(vehicle)
+
+    NickReportCar(vehicle)
 
     return vehicle
 end

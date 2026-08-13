@@ -183,6 +183,12 @@ local function endJob(reason)
     -- Lua, so the merge kept the old job alive - which meant one job per
     -- round, ever ("already at it" at every shop after the first) and an
     -- exit event pushed every tick until the whistle.
+    --
+    -- And the price of the fresh table is that it must list EVERY key: this
+    -- one shipped without publicEmpty, revealed and cashed, so the first
+    -- finished job nilled all three - which killed the tick (revealedHouses
+    -- reads revealed every second), the stash (banking crashed) and the purse
+    -- (carValue indexes cashed) for the rest of the round.
     state = {
         sites       = state.sites,
         houses      = state.houses,
@@ -191,6 +197,9 @@ local function endJob(reason)
         stashed     = state.stashed,
         taken       = state.taken,
         publicTaken = state.publicTaken,
+        publicEmpty = state.publicEmpty,
+        revealed    = state.revealed,
+        cashed      = state.cashed,
         pettiest    = pettiest,
         events      = state.events,
     }

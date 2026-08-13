@@ -559,6 +559,7 @@ local function dropRelief(at, announce)
     SetVehicleEngineOn(car, true, true, false)
     SetVehicleDoorsLocked(car, 1) -- 1 = unlocked; a locked relief car is a cruel joke
     fleet.track(car)
+    NickReportCar(car) -- and the server's sweep, should this client vanish mid-round
 
     if announce then NickHUD.notify(announce) end
     return car, node

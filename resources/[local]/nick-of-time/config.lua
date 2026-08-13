@@ -464,6 +464,24 @@ Config = {
             'member of the public phoned something in. Point on your map.',
             '999 call from a witness. No direction, just a postcode.',
             'someone saw something. They were not helpful about which way.',
+            '999 from the public. Quote: "driving like an absolute knob". It is on your map.',
+        },
+
+        -- Another star on the board. Every one of them is a star he chose to
+        -- earn by banking instead of running (pillar 4), and control knows it.
+        RADIO_STARS = {
+            'the board has given %s another star. He seems delighted. Stop him.',
+            'star added. %s is officially a spree now, not an errand.',
+            'upstairs would like it noted that %s is having a better night than we are.',
+        },
+
+        -- The cash-in-car paperwork, read like a logbook entry: the model,
+        -- then the money. Said to the whole room - the sale is public, the
+        -- WHERE is not (that stays acceptance test 9's business).
+        CAR_LINES = {
+            'He cashed a %s in somewhere. That is £%s of somebody else\'s car.',
+            'Paperwork filed: one previously-loved %s, £%s. Condition: "was fine when I got in".',
+            'A %s has just entered the second-hand economy at £%s. Its owner has entered a bus queue.',
         },
 
         -- The end-of-round paperwork: the take read out like an insurance
