@@ -6,6 +6,11 @@
 -- fire and the /nick command itself all come off the descriptor at the bottom
 -- of this file. What lives here is the drama - the rota, the endings, and the
 -- one voice that announces things.
+-- Sudden death is a FLAG on the live round, not a phase of its own. Every
+-- system in this resource - the patrols, his prompts, the arrest, the
+-- detection maths - gates on phase == 'active', and inventing a fourth phase
+-- would have switched all of them off at the exact moment the mode gets
+-- interesting. The clock changes; nothing else has to know.
 local state = {
     phase       = 'idle', -- idle | setup | active
     robber      = nil,    -- server id
@@ -19,6 +24,10 @@ local state = {
     radioAt     = 0,      -- next moment control is allowed to speak
     heliOffered = false,  -- control has told them the favour is available
     lastStars   = 0,      -- for control's star-up commentary
+    sudden      = false,  -- the extra three minutes are running
+    quietFrom   = 0,      -- when his current unbroken quiet began
+    suddenEndsAt = 0,     -- the hard cap on the whole business
+    lastCall    = 0,      -- last countdown second said out loud
 }
 
 local function setState(next)
@@ -209,6 +218,10 @@ local function onStart()
         radioAt     = 0,
         heliOffered = false,
         lastStars   = 0,
+        sudden      = false,
+        quietFrom   = 0,
+        suddenEndsAt = 0,
+        lastCall    = 0,
     }
 
     local firstCop = nil
@@ -286,6 +299,12 @@ local function announce(events)
                 or event.saw == 'gunfire' and 'Witness - shots fired here'
                 or 'Witness - collision here')
             radio(Config.flavour.RADIO_WITNESS)
+
+        elseif event.kind == 'airspot' then
+            -- The handoff: a human upstairs has him, so cars turn out. Said
+            -- out loud because the robber hearing it is the fair warning
+            -- that being seen from the air has consequences on the ground.
+            tell('Air unit has eyes on him. All available units, move in - that is a spot, not an arrest.')
 
         elseif event.kind == 'airunit' then
             -- The approval is public - a helicopter is not a secret for long,
@@ -378,10 +397,20 @@ local function onTick()
     status.emptySites  = NickHeist.publicEmpty()
     status.burned      = NickHeist.revealedHouses()
 
-    local escalation = NickEscalation.publish(stars)
+    local escalation = NickEscalation.publish(stars, state.sudden)
     status.patrolTarget = escalation.patrolTarget
     status.relay        = escalation.relay
     status.heliActive   = escalation.heliActive
+
+    -- Sudden death, on everybody's HUD. He needs to know how much quiet he
+    -- has strung together; they need to know how close he is to walking off
+    -- with it. Same number, opposite feelings - which is the whole mode.
+    status.sudden = state.sudden or nil
+    if state.sudden then
+        status.quietLeft = math.max(0,
+            Config.round.SUDDEN_S - math.floor((now - state.quietFrom) / 1000))
+        status.suddenLeft = math.max(0, math.ceil((state.suddenEndsAt - now) / 1000))
+    end
 
     -- Control's commentary, one line per change of heart and never more often
     -- than RADIO_GAP_S. Only the changes worth a line: losing him, giving up
@@ -459,7 +488,80 @@ local function onTick()
         radio(Config.flavour.RADIO_HELI_READY)
     end
 
-    if remaining <= 0 then exports.core:EndGametype('time') end
+    -- ===== the whistle, and the three minutes that may follow it =====
+    -- The robber cannot end the round any more; the clock does, and what the
+    -- clock finds when it gets there decides everything. SEEN is hard contact
+    -- and only hard contact: the drifting circle is a guess, and a guess must
+    -- never be what costs a man ten minutes of work.
+    local R    = Config.round
+    local seen = status.contact == 'hard'
+
+    if not state.sudden and remaining <= 0 then
+        if not seen then
+            -- Away clean. Everything on him goes through the door at the
+            -- whistle, which is the reward for not being anywhere near a
+            -- copper when it went.
+            local walked = NickHeist.bankAll()
+            tell(('TIME. Nobody had eyes on him. %s walks with everything on him - £%s banked at the whistle.')
+                :format(state.robberName or '?', walked))
+            return exports.core:EndGametype('got-away')
+        end
+
+        -- Caught in the open at 10:00. He does not lose it here - he has to
+        -- go quiet for three unbroken minutes to keep it, in a city that is
+        -- now actively looking for him.
+        setState({
+            sudden       = true,
+            quietFrom    = now,
+            suddenEndsAt = now + R.SUDDEN_MAX_S * 1000,
+            lastCall     = 0,
+        })
+
+        tell(('TIME - and they can see him. SUDDEN DEATH: %s has to stay out of sight for %d minutes. Every unit in the city is now looking.')
+            :format(state.robberName or '?', math.floor(R.SUDDEN_S / 60)))
+        TriggerClientEvent('nick:sudden', -1, R.SUDDEN_S)
+        return
+    end
+
+    if state.sudden then
+        -- Seen, or heard. Either restarts his three minutes from the top -
+        -- the deal is UNBROKEN quiet, and a 999 call is the city telling the
+        -- law exactly which bus stop he has just driven into.
+        local noisy = R.SUDDEN_NOISE_RESETS
+            and NickEscalation.lastNoiseAt() > state.quietFrom
+
+        if seen or noisy then
+            if now - state.quietFrom > 3000 then -- don't spam it every tick
+                tell(seen
+                    and 'They have him again. Three minutes. From the top.'
+                    or  'Somebody just phoned him in. Three minutes. From the top.')
+            end
+            setState({ quietFrom = now, lastCall = 0 })
+        end
+
+        local quietFor  = math.floor((now - state.quietFrom) / 1000)
+        local leftQuiet = math.max(0, R.SUDDEN_S - quietFor)
+
+        -- The countdown, once a second, only near the end - the last thirty
+        -- seconds of a man hiding in an alley is the best part of the mode.
+        if leftQuiet <= R.SUDDEN_WARN_S and leftQuiet > 0 and leftQuiet ~= state.lastCall then
+            setState({ lastCall = leftQuiet })
+            TriggerClientEvent('nick:suddenTick', -1, leftQuiet)
+        end
+
+        if leftQuiet <= 0 then
+            local walked = NickHeist.bankAll()
+            tell(('He went quiet and stayed quiet. %s keeps the lot - £%s.')
+                :format(state.robberName or '?', walked))
+            return exports.core:EndGametype('went-quiet')
+        end
+
+        if now >= state.suddenEndsAt then
+            tell(('%s never got a clean three minutes. The law wore him down - everything on him is gone.')
+                :format(state.robberName or '?'))
+            return exports.core:EndGametype('run-down')
+        end
+    end
 end
 
 -- Everybody back into the world everyone else is in. A player left behind in
@@ -512,7 +614,10 @@ local function onEnd(reason)
 
     local lines = {
         arrested   = ('%s got nicked. Everything in the bag goes back on the shelf. Banked: £%s.'):format(name or '?', stashed),
-        ['called-it'] = ('%s called it a day and walked away with £%s.'):format(name or '?', stashed),
+        -- The two ways to walk away with it, and the one way to be worn down.
+        ['got-away']   = ('The whistle went and nobody could see him. %s finished on £%s.'):format(name or '?', stashed),
+        ['went-quiet'] = ('Three minutes of nothing at all. %s finished on £%s.'):format(name or '?', stashed),
+        ['run-down']   = ('%s could never get three quiet minutes together. Finished on £%s - the rest is evidence.'):format(name or '?', stashed),
         time       = ('Ten minutes gone. %s banked £%s and is still holding whatever he never stashed - which is now nobody\'s.'):format(name or '?', stashed),
         fled       = ('%s left the server mid-job. The perfect crime, technically.'):format(name or '?'),
         abandoned  = 'Round abandoned.',
@@ -522,7 +627,8 @@ local function onEnd(reason)
     -- The retelling: the write-off, and a superlative where one was earned.
     -- Only for rounds that actually played out - a fled or abandoned round
     -- gets no paperwork.
-    if result == 'arrested' or result == 'called-it' or result == 'time' then
+    if result == 'arrested' or result == 'got-away' or result == 'went-quiet'
+        or result == 'run-down' or result == 'time' then
         local F      = Config.flavour
         local taken  = NickHeist.taken()
         local heist  = NickHeist.review()
@@ -626,7 +732,11 @@ local function register()
         -- Backstop only: onTick calls time on its own clock, which starts
         -- when everyone has actually been placed. This cap exists so a wedged
         -- round can never run forever.
-        roundSeconds = Config.round.READY_S + Config.round.ROUND_LENGTH_S + 15,
+        -- Backstop only, and it has to clear SUDDEN DEATH as well now: the
+        -- framework calling time at 10:00 would have guillotined the extra
+        -- three minutes before onTick could referee them.
+        roundSeconds = Config.round.READY_S + Config.round.ROUND_LENGTH_S
+            + Config.round.SUDDEN_MAX_S + 30,
 
         -- 0, not two, on purpose. The framework's floor would refuse before
         -- the map gate could speak, and "here is what to tag" is an answer you

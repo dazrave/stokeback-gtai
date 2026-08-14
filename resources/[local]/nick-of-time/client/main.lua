@@ -278,6 +278,28 @@ RegisterNetEvent('nick:banked', function(value)
     NickHUD.shard('STASHED', NickHUD.money(value) .. ' safely out of your hands.')
 end)
 
+-- The whistle went and they could see him. Both sides get the card, because
+-- the whole drama of the next three minutes is that everyone knows the terms.
+RegisterNetEvent('nick:sudden', function(seconds)
+    if not state.role then return end
+
+    local minutes = math.floor((seconds or 180) / 60)
+
+    NickHUD.shard('SUDDEN DEATH', state.role == 'robber'
+        and ('They saw you on the whistle. %d minutes out of sight and it is all yours.'):format(minutes)
+        or  ('He was in view when time went. Keep eyes on him for %d minutes and he loses the lot.'):format(minutes))
+end)
+
+-- The last thirty seconds, out loud. A man hiding in an alley listening to a
+-- countdown is the best thing this mode does.
+RegisterNetEvent('nick:suddenTick', function(left)
+    if not state.role or not left then return end
+
+    if left <= 5 or left % 10 == 0 then
+        NickHUD.notify(('~r~%d'):format(left))
+    end
+end)
+
 RegisterNetEvent('nick:end', function(result, robberName, stashed)
     -- A fresh table, NOT setState: `role = nil` in a constructor handed to a
     -- merge is simply absent, so the old role survived the round - and the
@@ -287,7 +309,9 @@ RegisterNetEvent('nick:end', function(result, robberName, stashed)
 
     local shards = {
         arrested = { 'NICKED', ('Bag confiscated. %s kept %s.'):format(robberName or '?', NickHUD.money(stashed)) },
-        ['called-it'] = { 'CALLED IT A DAY', ('%s walked away with %s.'):format(robberName or '?', NickHUD.money(stashed)) },
+        ['got-away']   = { 'AWAY CLEAN', ('Nobody had eyes on him at the whistle. %s kept the lot - %s.'):format(robberName or '?', NickHUD.money(stashed)) },
+        ['went-quiet'] = { 'GONE TO GROUND', ('Three minutes of absolutely nothing. %s finished on %s.'):format(robberName or '?', NickHUD.money(stashed)) },
+        ['run-down']   = { 'WORN DOWN', ('%s never got three quiet minutes. Finished on %s.'):format(robberName or '?', NickHUD.money(stashed)) },
         time     = { 'TIME', ('%s banked %s. The rest went back on the shelf.'):format(robberName or '?', NickHUD.money(stashed)) },
         fled     = { 'GONE', 'Left the server mid-job. Technically flawless.' },
         abandoned = { 'ROUND OVER', 'Called off.' },
@@ -404,6 +428,17 @@ CreateThread(function()
         if state.role and status.phase and status.phase ~= 'idle' then
             local remaining = status.remaining or 0
             local clock     = ('%d:%02d'):format(math.floor(remaining / 60), remaining % 60)
+
+            -- SUDDEN DEATH replaces the round clock with the one number that
+            -- matters: how much unbroken quiet he has left to serve. Same
+            -- figure on both sides, opposite feelings, which is the mode in
+            -- one line. It goes red and stays red - nobody should have to
+            -- work out which clock they are looking at.
+            if status.sudden then
+                local quiet = status.quietLeft or 0
+                clock = ('~r~SUDDEN DEATH ~w~%d:%02d'):format(
+                    math.floor(quiet / 60), quiet % 60)
+            end
             local stars     = (status.stars or 0) > 0 and (' ~r~' .. string.rep('*', status.stars)) or ''
 
             local line
@@ -454,6 +489,14 @@ CreateThread(function()
                 local onYou = purse.onYou or purse.carried or 0
                 if onYou > 0 then
                     second = ('~g~IF YOU BANK +%s'):format(NickHUD.money(onYou))
+                end
+
+                -- In sudden death the bag is already promised to him if he
+                -- can just be nobody for three minutes, so the line changes
+                -- to say the thing he is actually playing for.
+                if status.sudden then
+                    second = ('~r~STAY OUT OF SIGHT~w~ - %s rides on it')
+                        :format(NickHUD.money(onYou))
                 end
             end
 

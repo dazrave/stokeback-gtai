@@ -11,8 +11,26 @@ Config = {
 
     -- ===== the round =====
     round = {
-        ROUND_LENGTH_S     = 600,  -- 10:00 hard cap, the whole pitch
+        ROUND_LENGTH_S     = 600,  -- 10:00, and he does not get to stop it early
         SHOW_DELTA_TO_COPS = true, -- the spectators knowing before the driver does
+
+        -- ===== the whistle, and what happens at it =====
+        -- Darren's rewrite: "if the robber isn't currently seen when the ten
+        -- mins timer is up, they bank that money (on them). if they are seen
+        -- when the time ends then we go into sudden death where they have to
+        -- be 'quiet' for 3 mins, but ai cops start spawning."
+        --
+        -- SEEN means the detection model's hard contact - somebody's eyes,
+        -- a patrol's relay or the air ping, right now. Soft (the drifting
+        -- circle) is NOT seen: a search area is a guess, and a guess must
+        -- never cost him the round.
+        SUDDEN_S       = 180, -- unbroken quiet needed to walk away with it
+        SUDDEN_MAX_S   = 360, -- the hard cap: run out of it and the law wins
+        SUDDEN_WARN_S  = 30,  -- countdown said out loud under this
+        -- Being SEEN or HEARD restarts the quiet clock from the top. A 999
+        -- call counts as heard, which is what makes the witness pipeline
+        -- matter in sudden death - crash into a bus stop and you start again.
+        SUDDEN_NOISE_RESETS = true,
 
         -- (+) Grace before the clock starts. Roles go out 1.5s after the round
         -- is set up and a client can spend another 2.5s waiting for collision
@@ -247,11 +265,10 @@ Config = {
         ZONE_RADIUS    = 6.0,
         HIDDEN_BUCKET  = 71, -- arbitrary, just not 0 (the world everyone else is in)
 
-        -- (+) Ending the round is a held G, not a tapped one. G is also the
-        -- smash-and-grab key, and one loose tap at a door cost Rory a £6,428
-        -- bag on the default map's first night. Long enough to be deliberate,
-        -- short enough that a man who means it is not stood there feeling silly.
-        CALLIT_HOLD_MS = 1500,
+        -- (The call-it-a-day hold lived here. The robber no longer gets to
+        -- end the round at all - Darren's rewrite - so the door does one
+        -- thing now: it banks the bag. See round.SUDDEN_S for what happens
+        -- at the whistle instead.)
 
         -- (+) Server slack on the stash zone, same disease as the tills
         -- (looting.START_SLACK): he DIVES into safehouses at a dead run with
@@ -270,6 +287,20 @@ Config = {
         AI_CARS_PER_STAR = 1,
         AI_CARS_MAX      = 6,
         AI_RELAY_RADIUS  = 120, -- while a patrol is this close he is on the humans' maps
+
+        -- (+) Sudden death turns the patrols up: the whole point of the extra
+        -- three minutes is a city that is actively looking for him, not the
+        -- same one or two cars mooching about. Capped by AI_CARS_MAX anyway,
+        -- because CPointRoute's forty route slots do not care about drama.
+        SUDDEN_AI_CARS = 6,
+
+        -- (+) Plan §5.3 realised properly (Darren: "when you spot the suspect
+        -- from a helicopter, ai police start spawning and chasing"). A human
+        -- in a helicopter who gets eyes on him summons ground units for this
+        -- long - the aircraft is a SPOTTER that hands the chase to cars, not
+        -- a gunship that does the chasing itself.
+        AIR_SPOT_AI_CARS = 4,
+        AIR_SPOT_HOLD_S  = 45,
 
         BONUS_HELI_CONTACT_THRESH = 0.15, -- team contact score below this unlocks it
         BONUS_HELI_PING_S         = 20,
@@ -317,6 +348,35 @@ Config = {
         CULLING_RADIUS_AIR = 1200.0,
     },
 
+    -- ===== agent smith =====
+    -- (+) Darren: "cops should be able to 'agent smith' and morph into the
+    -- nearest ai police car to the suspect and take over." The cure for the
+    -- real complaint - "by the time we get there he's already gone" - because
+    -- the two minute drive across town IS the reason he is always gone.
+    --
+    -- The no-radar rule survives intact and is the whole design constraint
+    -- here: you take over a unit near what DISPATCH BELIEVES, never near
+    -- where he actually is. Take over on a cold trail and there is nothing to
+    -- take over - which is exactly the pressure that makes the finding game
+    -- still matter.
+    takeover = {
+        ENABLED    = true,
+        COMMAND    = 'smith',
+        PER_ROUND  = 3,   -- per copper. Not a taxi service.
+        COOLDOWN_S = 45,  -- and not a teleport button either
+
+        -- Where you come out: on a road this far from the believed point,
+        -- never on top of it. Far enough that arriving is not the same as
+        -- finding him, close enough to be in the chase.
+        DROP_MIN = 90.0,
+        DROP_MAX = 160.0,
+
+        -- A unit this close to the belief is the one you 'become' - it is
+        -- despawned as you take its place, so the force spends a patrol to
+        -- put a human in the area rather than getting a free extra car.
+        CONSUME_RADIUS = 200.0,
+    },
+
     -- ===== the air unit =====
     -- (+) Darren, game night: "I thought we could spawn and pilot our own
     -- Heli?" - the scope always meant one (manually piloted helicopter, with
@@ -336,6 +396,12 @@ Config = {
         -- request lands her at the nearest flat, empty spot - and the pad in
         -- locations.helipads is only the fallback for a copper stood
         -- somewhere with no room at all.
+        -- A bird is parked on every pad in locations.helipads, materialising
+        -- when a copper gets this close to one. Free and always there: the
+        -- ration below is for having one delivered to your feet, never for
+        -- flying at all.
+        PAD_SPAWN_WITHIN = 120.0,
+
         SEARCH_RADII = { 22.0, 38.0, 55.0 }, -- rings tried, nearest first
         CLEARANCE    = 9.0,  -- her footprint: nothing parked inside this
         MAX_SLOPE    = 1.6,  -- ground height spread across that footprint
@@ -345,6 +411,11 @@ Config = {
         -- /heli fills the sky with parked landmarks.
         ABANDON_DISTANCE = 120.0,
         ABANDON_AFTER_S  = 60,
+
+        -- The handoff: she flew, she landed, the pilot got out. Her job was
+        -- to START a car chase, so she goes back to the pad promptly rather
+        -- than sitting in a junction being a landmark for the robber.
+        HANDOFF_AFTER_S = 20,
     },
 
     -- ===== witness-modelled incident calls =====
@@ -690,12 +761,20 @@ Config = {
             { name = "The doorway opposite the nick (La Mesa)", x = 826.0,   y = -1290.0, z = 28.2,  h = 180.0 }, -- chase's La Mesa kerb
         },
 
-        -- Where the air unit lands (/heli). Same made-up-defaults licence as
-        -- the rest of this block. The Mission Row rooftop pad is the single
-        -- most-documented helipad in the game - it is where the stock police
-        -- mav lives. Not on the refusal list: no pad just means /heli says so.
+        -- Helipads. Police-only blips (Darren: "they should also be able to
+        -- see multiple locations of where police helicopters are parked"),
+        -- and a bird is waiting on each. /heli still calls one to your feet
+        -- on the ration book; these are the free-and-always-there option, so
+        -- a copper who has spent his calls still has somewhere to walk.
+        --
+        -- Same made-up-defaults licence as the rest of this block: the four
+        -- most-documented rooftop pads in Los Santos. Real tags replace them.
+        -- Not on the refusal list - no pads just means no air support.
         helipads = {
-            { name = "Mission Row roof", x = 449.2, y = -981.2, z = 43.7, h = 90.0 },
+            { name = "Mission Row roof",   x = 449.2,   y = -981.2,  z = 43.7,  h = 90.0 },
+            { name = "Central LS Medical", x = 338.0,   y = -1450.0, z = 46.5,  h = 320.0 },
+            { name = "LSIA south apron",   x = -1220.0, y = -2880.0, z = 14.0,  h = 330.0 },
+            { name = "Del Perro heights",  x = -745.0,  y = -1420.0, z = 5.0,   h = 110.0 },
         },
     },
 
