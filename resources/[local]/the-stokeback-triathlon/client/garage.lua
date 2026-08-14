@@ -73,13 +73,47 @@ end
 -- further apart than bikes. Shared by the fresh line-up and by a recovery
 -- that happens AT the line-up - a recovery spawned "2 metres from the tag"
 -- is a recovery spawned inside whoever's vehicle is still parked in bay one.
+-- The road itself, if there is one within reach. Darren: "make sure vehicles
+-- such as the bikes and planes spawn in the road not on the side of it." A
+-- tagged transition is somebody STOOD somewhere, which is by definition off
+-- to one side - so the anchor is snapped to the nearest vehicle node and the
+-- bays are laid out ALONG the carriageway (nose to tail down the road)
+-- rather than across it into a hedge. Same native nick uses to drop relief
+-- cars. If there is no node - a beach line-up on a future course - the tag
+-- stands exactly as before.
+local function onRoad(base)
+    local ok, node, heading = GetClosestVehicleNodeWithHeading(
+        base.x, base.y, base.z, 1, 3.0, 0)
+
+    if not ok or not node then return base, false end
+
+    -- A node hundreds of metres away is a different road, not this one.
+    if #(vector3(node.x, node.y, node.z) - vector3(base.x, base.y, base.z)) > 40.0 then
+        return base, false
+    end
+
+    return { x = node.x, y = node.y, z = node.z, h = heading or base.h or 0.0 }, true
+end
+
 local function placeAtBay(hash, grant, base)
     local spacing = grant.leg == 'air'
         and (Config.vehicles.AIR_SPACING or 22.0)
         or  (Config.vehicles.SLOT_SPACING or 6.0)
 
-    local rad    = math.rad(base.h or 0.0)
+    local road
+    base, road = onRoad(base)
+
+    local rad = math.rad(base.h or 0.0)
+
+    -- WHICH WAY THE BAYS WALK. Off-road they go abreast, (cos h, sin h),
+    -- which is a start-line rank and how this always worked. ON a road they
+    -- must go nose to tail instead - GTA's forward vector is
+    -- (-sin h, cos h), and a rank laid abreast across a carriageway puts
+    -- bay three in the oncoming lane and bay four in a hedge, which is
+    -- exactly the "on the side of the road" Darren is objecting to.
     local dx, dy = math.cos(rad), math.sin(rad)
+    if road then dx, dy = -math.sin(rad), math.cos(rad) end
+
     local from   = ((grant.slot or 1) - 1) * spacing
 
     -- The bay fan walks at (cos h, sin h) from the anchor, and nothing

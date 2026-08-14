@@ -113,6 +113,47 @@ Config = {
         },
     },
 
+    -- ===== tonight's line =====
+    -- (+) Darren: "the race checkpoints should be slightly more random so
+    -- each time you play you're not sure which way we're going." Each
+    -- checkpoint below can carry `alts` - other spots on the same stretch,
+    -- every one of them a telemetry sample of a human who was actually
+    -- there - and one race seed picks between them, the same way on the
+    -- server and on every client. `optional` checkpoints drop out entirely
+    -- on some seeds, which changes the shape of a leg rather than nudging a
+    -- corner. The start, both transitions and the finish never move: you
+    -- always know where it begins and where it ends.
+    variation = {
+        ENABLED = true,
+
+        -- Read out at the whistle, so a course that changed reads as
+        -- deliberate rather than as a bug. %d is the seed - quoting it
+        -- means an argument about "that was different last time" can be
+        -- settled, and a good line can be run again on purpose.
+        ANNOUNCE = 'Tonight\'s line is number %d. The stewards drew it this morning and have already lost the paperwork.',
+        DETOUR_IN  = 'Through town on the bikes tonight. Mind the pub.',
+        DETOUR_OUT = 'No town lap tonight. The landlord asked.',
+    },
+
+    -- ===== the elastic =====
+    -- (+) Darren: "provide a little bit of rubber banding so people at the
+    -- back catch up." A little. The leader gets nothing, the boost only
+    -- exists beyond BAND_START_M, and MAX is deliberately modest: this
+    -- closes a gap that has stopped being a race, it does not hand anybody
+    -- a win. Same per-frame native nick uses - and the same lesson, which
+    -- cost an evening there: SetVehicleEnginePowerMultiplier lasts ONE
+    -- FRAME, so client/banding.lua asserts it every frame or it does
+    -- nothing at all.
+    banding = {
+        ENABLED       = true,
+        BAND_START_M  = 150.0,  -- inside this you are still in the race: no help
+        BAND_FULL_M   = 600.0,  -- out here the elastic is at full stretch
+        BAND_MAX      = 1.20,   -- +20% engine power at most
+        FOOT_MAX      = 1.12,   -- (+) the run leg gets a gentler nudge on stamina
+        LOG_CHANGES   = true,   -- server prints engagement, so "is it working?"
+                                -- is answerable from the log rather than from vibes
+    },
+
     -- ===== nobody is ever out of the race =====
     respawn = {
         DELAY_S            = 5,    -- respawn delay: a beat on the floor, then up
@@ -405,9 +446,24 @@ Config = {
                 --   cp3 QuietOtter1376 driving,  t 1786656925
                 run  = {
                     checkpoints = {
-                        { name = 'run cp 1 - up the street',        x = -275.0, y = 6330.0, z = 32.4 },
-                        { name = 'run cp 2 - the road north-east',  x = -250.3, y = 6396.9, z = 31.1 },
-                        { name = 'run cp 3 - the beach road bend',  x = -153.6, y = 6500.7, z = 29.0 },
+                        { name = 'run cp 1 - up the street',        x = -275.0, y = 6330.0, z = 32.4,
+                          alts = { -- IcyAnt8233 t1786661277 / DazRave t1786658173 / QuietOtter1376 t1786657746
+                            { x = -264.2, y = 6306.3, z = 32.4 },
+                            { x = -271.9, y = 6356.4, z = 32.3 },
+                            { x = -291.5, y = 6308.0, z = 31.4 },
+                          } },
+                        { name = 'run cp 2 - the road north-east',  x = -250.3, y = 6396.9, z = 31.1,
+                          alts = { -- DazRave t1786660245 / DazRave t1786656853 / QuietOtter1376 t1786657283
+                            { x = -263.3, y = 6374.7, z = 31.0 },
+                            { x = -227.4, y = 6414.6, z = 31.3 },
+                            { x = -254.3, y = 6432.5, z = 30.3 },
+                          } },
+                        { name = 'run cp 3 - the beach road bend',  x = -153.6, y = 6500.7, z = 29.0,
+                          alts = { -- DazRave t1786660287 x2 / IcyAnt8233 t1786660288
+                            { x = -161.1, y = 6508.1, z = 29.4 },
+                            { x = -178.1, y = 6484.4, z = 30.0 },
+                            { x = -161.3, y = 6537.4, z = 23.6 },
+                          } },
                     },
                 },
 
@@ -431,12 +487,47 @@ Config = {
                 moto = {
                     transition = { name = 'The bikes - the beach road', x = -103.7, y = 6551.5, z = 28.9, h = 270.0 },
                     checkpoints = {
-                        { name = 'moto cp 1 - the far bend',        x = -48.3,  y = 6610.9, z = 29.8 },
-                        { name = 'moto cp 2 - town, northbound',    x = -267.7, y = 6393.9, z = 30.5 },
-                        { name = 'moto cp 3 - past the pub',        x = -303.8, y = 6232.7, z = 31.1 },
-                        { name = 'moto cp 4 - the beach road',      x = -133.2, y = 6447.2, z = 31.3 },
-                        { name = 'moto cp 5 - the coast road',      x = 890.2,  y = 6498.6, z = 22.6 },
-                        { name = 'moto cp 6 - the long straight',   x = 1135.0, y = 6496.5, z = 21.6 },
+                        { name = 'moto cp 1 - the far bend',        x = -48.3,  y = 6610.9, z = 29.8,
+                          alts = { -- DazRave t1786656938 / DazRave t1786656896 / QuietOtter1376 t1786658216
+                            { x = -74.3,  y = 6590.0, z = 29.2 },
+                            { x = -88.6,  y = 6566.0, z = 29.0 },
+                            { x = -114.5, y = 6598.7, z = 26.3 },
+                          } },
+                        { name = 'moto cp 2 - town, northbound',    x = -267.7, y = 6393.9, z = 30.5,
+                          alts = { -- DazRave t1786658195 x2 / DazRave t1786657296
+                            { x = -273.9, y = 6367.5, z = 30.9 },
+                            { x = -239.0, y = 6398.5, z = 31.0 },
+                            { x = -251.0, y = 6431.3, z = 30.0 },
+                          } },
+                        -- The southern detour, and the one checkpoint that
+                        -- comes and goes: on half the seeds the lap runs down
+                        -- past the pub, on the other half it does not go into
+                        -- town at all. That is the difference a rider can
+                        -- actually feel at the whistle.
+                        { name = 'moto cp 3 - past the pub',        x = -303.8, y = 6232.7, z = 31.1, optional = true,
+                          alts = { -- QuietOtter1376 t1786658082 / DazRave t1786658096 / QuietOtter1376 t1786656904
+                            { x = -284.9, y = 6253.6, z = 31.1 },
+                            { x = -331.9, y = 6262.4, z = 31.2 },
+                            { x = -265.8, y = 6307.0, z = 31.9 },
+                          } },
+                        { name = 'moto cp 4 - the beach road',      x = -133.2, y = 6447.2, z = 31.3,
+                          alts = { -- DazRave t1786656875 / QuietOtter1376 t1786658195 / QuietOtter1376 t1786657767
+                            { x = -168.1, y = 6451.5, z = 31.0 },
+                            { x = -125.5, y = 6410.3, z = 31.1 },
+                            { x = -162.6, y = 6484.8, z = 29.8 },
+                          } },
+                        { name = 'moto cp 5 - the coast road',      x = 890.2,  y = 6498.6, z = 22.6,
+                          alts = { -- DazRave t1786656053 x2 / QuietOtter1376 t1786656042
+                            { x = 947.1,  y = 6495.6, z = 21.6 },
+                            { x = 813.7,  y = 6502.8, z = 36.5 },
+                            { x = 1020.6, y = 6493.1, z = 21.6 },
+                          } },
+                        { name = 'moto cp 6 - the long straight',   x = 1135.0, y = 6496.5, z = 21.6,
+                          alts = { -- DazRave t1786656053 x2 / QuietOtter1376 t1786656042
+                            { x = 1176.5, y = 6497.4, z = 21.6 },
+                            { x = 1072.9, y = 6494.8, z = 21.6 },
+                            { x = 1221.1, y = 6498.3, z = 21.4 },
+                          } },
                     },
                 },
 
@@ -456,9 +547,22 @@ Config = {
                     checkpoints = {
                         { name = 'air gate 1 - climb-out east',          x = 1750.0, y = 6430.0, z = 90.0 },
                         { name = 'air gate 2 - back over the road',      x = 1000.0, y = 6500.0, z = 150.0 },
-                        { name = 'air gate 3 - the high run west',       x = 100.0,  y = 6450.0, z = 190.0 },
+                        -- The two gates inside the corridor the pilots
+                        -- actually flew get real alternatives: every one of
+                        -- these is a sample of a duster in flight tonight.
+                        { name = 'air gate 3 - the high run west',       x = 100.0,  y = 6450.0, z = 190.0,
+                          alts = { -- DazRave t1786656074 x2 / QuietOtter1376 t1786656084
+                            { x = 104.6, y = 6403.7, z = 150.0 },
+                            { x = 166.2, y = 6442.5, z = 176.3 },
+                            { x = 77.7,  y = 6389.7, z = 137.5 },
+                          } },
                         { name = 'air gate 4 - the town turn',           x = -300.0, y = 6300.0, z = 140.0 },
-                        { name = 'air gate 5 - the proven ceiling',      x = 300.0,  y = 6500.0, z = 200.0 },
+                        { name = 'air gate 5 - the proven ceiling',      x = 300.0,  y = 6500.0, z = 200.0,
+                          alts = { -- QuietOtter1376 t1786656063 / DazRave t1786656074 x2
+                            { x = 284.3, y = 6495.7, z = 205.3 },
+                            { x = 322.4, y = 6505.7, z = 201.8 },
+                            { x = 235.0, y = 6481.6, z = 196.8 },
+                          } },
                         { name = 'air gate 6 - east again, lower',       x = 1200.0, y = 6500.0, z = 130.0 },
                         { name = 'air gate 7 - descending back in',      x = 0.0,    y = 6550.0, z = 90.0 },
                     },

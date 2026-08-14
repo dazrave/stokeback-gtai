@@ -405,8 +405,19 @@ end
 -- running order. Six racers, one small table - cheap enough to just send.
 function TriRace.publish()
     local order, mine = {}, {}
+    local standings   = TriRace.standings()
 
-    for index, entry in ipairs(TriRace.standings()) do
+    -- How far adrift each racer is, for the elastic (client/banding.lua).
+    -- Straight-line to whoever is leading, measured off the server's own copy
+    -- of both peds: a client must never get to say how much help it is owed.
+    -- The leader is by definition nought behind.
+    local leader = nil
+    for _, entry in ipairs(standings) do
+        if not entry.finished and not entry.dnf then leader = entry break end
+    end
+    local leaderAt = leader and coordsOf(leader.src) or nil
+
+    for index, entry in ipairs(standings) do
         order[#order + 1] = {
             name     = entry.name,
             position = index,
@@ -415,6 +426,11 @@ function TriRace.publish()
             place    = entry.position,
         }
 
+        local behind = 0.0
+        if leader and entry.src ~= leader.src and not entry.finished and not entry.dnf then
+            behind = distance(coordsOf(entry.src), leaderAt) or 0.0
+        end
+
         mine[tostring(entry.src)] = {
             at       = entry.at,
             leg      = entry.leg,
@@ -422,6 +438,7 @@ function TriRace.publish()
             finished = entry.finished,
             dnf      = entry.dnf,
             place    = entry.position,
+            behind   = behind,
         }
     end
 

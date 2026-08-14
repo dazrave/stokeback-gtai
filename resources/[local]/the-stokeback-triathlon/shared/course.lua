@@ -29,10 +29,56 @@ local function point(entry, lift)
     }
 end
 
-local function points(list, lift)
+-- ===== tonight's line =====
+-- Darren: "the race checkpoints should be slightly more random so each time
+-- you play you're not sure which way we're going." A checkpoint may carry
+-- `alts` - other spots on the SAME stretch, every one its own telemetry
+-- sample - and one of them is chosen per race. The choice must be identical
+-- on the server and on all six clients or a claim means different things in
+-- different places, so it is not math.random: it is this, a plain integer
+-- hash of (seed, position), which answers the same everywhere and needs
+-- nothing sent but the seed itself.
+--
+-- Defined ABOVE points() on purpose: a local declared after its caller is a
+-- nil global inside it, which builds and parses perfectly and then falls over
+-- the first time anybody starts a race.
+local function chosen(seed, salt, count)
+    if count <= 1 then return 1 end
+    local mixed = ((seed or 0) * 1103515245 + (salt * 12345) + 1013904223) % 2147483648
+    return (math.floor(mixed / 65536) % count) + 1
+end
+
+-- The point a checkpoint resolves to this race, and whether it is in at all.
+-- `optional` entries drop out on some seeds, which changes the SHAPE of a leg
+-- rather than nudging one corner of it - the difference between "that corner
+-- moved" and "we are not going through town tonight".
+local function variantOf(entry, seed, salt)
+    if type(entry) ~= 'table' then return nil end
+
+    if entry.optional and seed and chosen(seed, salt + 7777, 2) == 2 then
+        return nil
+    end
+
+    if seed and type(entry.alts) == 'table' and #entry.alts > 0 then
+        local pick = chosen(seed, salt, #entry.alts + 1)
+        if pick > 1 then
+            local alt = entry.alts[pick - 1]
+            -- The name travels with the primary so the HUD still says which
+            -- checkpoint this is; only the coordinates move.
+            return { name = entry.name, x = alt.x, y = alt.y, z = alt.z, h = alt.h or entry.h }
+        end
+    end
+
+    return entry
+end
+
+-- `seed` and `salt` are tonight's line (see variantOf). Without a seed every
+-- checkpoint resolves to its primary, which is what the map gate counts and
+-- what a course with no variants has always done.
+local function points(list, lift, seed, salt)
     local out = {}
-    for _, entry in ipairs(list or {}) do
-        local at = point(entry, lift)
+    for index, entry in ipairs(list or {}) do
+        local at = point(variantOf(entry, seed, (salt or 0) + index * 31), lift)
         if at then out[#out + 1] = at end
     end
     return out
@@ -97,7 +143,7 @@ end
 -- (a rider whose bike is in a lake may walk the last of it), and an `opens`
 -- field: reaching it is what starts the next discipline and puts a vehicle in
 -- front of you.
-function TriCourse.build(name)
+function TriCourse.build(name, seed)
     local course = TriCourse.get(name)
     if not course then return nil end
 
@@ -133,7 +179,9 @@ function TriCourse.build(name)
             }
         end
 
-        local checkpoints = points(data.checkpoints, lift)
+        -- A different salt per leg, so the run and the moto legs do not both
+        -- take "the first alternative" on the same seed.
+        local checkpoints = points(data.checkpoints, lift, seed, legIndex * 1009)
         totals[leg] = #checkpoints
 
         -- Stamped here, from the leg's config, so the client's ground probe
@@ -186,6 +234,7 @@ function TriCourse.build(name)
         start     = point(course.start),
         waypoints = waypoints,
         totals    = totals,
+        seed      = seed,
     }
 end
 

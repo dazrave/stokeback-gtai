@@ -19,6 +19,7 @@ client_scripts {
     'client/main.lua',
     'client/course.lua',
     'client/garage.lua',
+    'client/banding.lua',
     'client/hud.lua',
 }
 

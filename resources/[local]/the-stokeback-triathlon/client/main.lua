@@ -111,7 +111,10 @@ local function placeOnLine(start, slot, field)
 end
 
 RegisterNetEvent('tri:course', function(payload)
-    local built = TriCourse.build(payload.course)
+    -- The seed is the server's, never this client's: tonight's line has to
+    -- flatten identically everywhere or a claim means different things on
+    -- different machines.
+    local built = TriCourse.build(payload.course, payload.seed)
     if not built or not built.start then return end
 
     DoScreenFadeOut(600)

@@ -90,7 +90,14 @@ local function onStart()
         return exports.core:EndGametype('short-handed')
     end
 
-    local built = TriCourse.build()
+    -- Tonight's line. One seed per race, decided here and sent to every
+    -- client, because the course has to flatten to the SAME ordered list
+    -- everywhere - a client rolling its own would claim checkpoint 7 while
+    -- the server was holding a different checkpoint 7.
+    local seed = (Config.variation and Config.variation.ENABLED)
+        and math.random(1, 999) or nil
+
+    local built = TriCourse.build(nil, seed)
     if not built or not built.start then
         tell('The course built empty. Check Config.courses in config.lua.')
         return exports.core:EndGametype('untagged')
@@ -132,6 +139,8 @@ local function onStart()
             if racer then
                 TriggerClientEvent('tri:course', id, {
                     course = built.name,
+                    seed   = built.seed, -- tonight's line, so every client
+                                         -- flattens the same course we did
                     label  = built.label,
                     slot   = racer.slot,
                     start  = built.start,
@@ -161,6 +170,24 @@ local function onStart()
 
     tell(('%s. %d on the start line.'):format(built.label, #players))
     for _, line in ipairs(Config.flavour.BRIEFING) do tell(line) end
+
+    -- Which way we are going tonight, said out loud: a course that quietly
+    -- changed would read as a bug, and quoting the seed means "that was
+    -- different last time" is a settleable argument rather than an eternal
+    -- one. The detour line tells them the one difference they can feel.
+    local V = Config.variation
+    if seed and V then
+        if V.ANNOUNCE then tell(V.ANNOUNCE:format(seed)) end
+
+        local detour = false
+        for _, waypoint in ipairs(built.waypoints) do
+            if waypoint.coords and waypoint.coords.name
+                and waypoint.coords.name:find('past the pub') then detour = true end
+        end
+
+        local line = detour and V.DETOUR_IN or V.DETOUR_OUT
+        if line then tell(line) end
+    end
 end
 
 -- OnTick, ~1Hz from the framework while the round is live.
@@ -466,6 +493,26 @@ end)
 -- ledger (race.lua) can sweep vehicles no client sweep will ever reach - a
 -- disconnect mid-leg, a bike a mate borrowed and now owns. The report is
 -- validated there: right model, and the reporter must own the entity.
+-- The elastic, logged (client/banding.lua reports state CHANGES only). This
+-- exists so "is the rubber banding actually working?" is answered from the
+-- server log rather than from how somebody's evening felt - which is exactly
+-- the question that went unanswered in nick for a fortnight while the boost
+-- was silently doing nothing at all.
+RegisterNetEvent('tri:bandState', function(engaged, value)
+    local src = source
+    if state.phase ~= 'racing' and state.phase ~= 'runout' then return end
+
+    local racer = TriRace.get(src)
+    if not racer then return end
+
+    if engaged then
+        print(('[tri] banding ON for %s (power +%.0f%%)'):format(
+            racer.name, ((tonumber(value) or 1.0) - 1.0) * 100))
+    else
+        print(('[tri] banding off for %s'):format(racer.name))
+    end
+end)
+
 RegisterNetEvent('tri:spawned', function(netId)
     local src = source
     if state.phase ~= 'racing' and state.phase ~= 'runout' then return end
@@ -554,6 +601,8 @@ local function register()
                 -- would stand there for the rest of the race.
                 TriggerClientEvent('tri:course', src, {
                     course = built.name,
+                    seed   = built.seed, -- tonight's line, so every client
+                                         -- flattens the same course we did
                     label  = built.label,
                     slot   = racer.slot,
                     start  = built.start,
