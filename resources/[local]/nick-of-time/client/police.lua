@@ -73,7 +73,12 @@ CreateThread(function()
                     and HasEntityClearLosToEntity(from, to, D.LOS_FLAGS) then
                     -- Just "I can see him": the server reads the position off
                     -- its own copy of his ped, so no client coords to trust.
-                    TriggerServerEvent('nick:see')
+                    -- The one extra bit is whether this look came from the
+                    -- air, which is what turns a spotter into a car chase
+                    -- (Darren: "when you spot the suspect from a helicopter,
+                    -- ai police start spawning and chasing").
+                    TriggerServerEvent('nick:see',
+                        myVehicle ~= 0 and IsPedInFlyingVehicle(me) or false)
                 end
             end
         end
@@ -314,6 +319,7 @@ RegisterNetEvent('nick:end', function()
     pcall(function() exports.spawnmanager:setAutoSpawn(true) end)
     TriggerEvent('core:respawnPolicy', { kind = 'off' })
     clearBlips()
+    NickClearPadBlips()
     fleet.sweep()
 end)
 
@@ -440,6 +446,178 @@ CreateThread(function()
     end
 end)
 
+-- Forward declaration, deliberately. dropRelief is defined with the rest of
+-- the stranded-copper machinery near the bottom of this file, and a Lua local
+-- is not in scope ABOVE its declaration - so agent smith, which lands a man
+-- in a fresh cruiser exactly the way a respawn does, would have been calling
+-- a nil global. Declared here, assigned there, one function either way.
+local dropRelief
+
+-- ===== agent smith =====
+-- Take over a unit near where the law THINKS he is. The command asks; the
+-- server rations it and hands back dispatch's belief - never his true
+-- position - and this puts you on a road a fair distance off it in a fresh
+-- cruiser. You arrive in the area, not on top of him: the finding is still
+-- yours to do.
+RegisterCommand((Config.takeover and Config.takeover.COMMAND) or 'smith', function()
+    local role, status = NickState()
+
+    if role ~= 'police' or status.phase ~= 'active' then
+        return NickHUD.notify('~y~Nothing to take over just now.')
+    end
+
+    TriggerServerEvent('nick:takeover')
+end, false)
+
+RegisterNetEvent('nick:takeoverGo', function(at)
+    local role = NickState()
+    if role ~= 'police' or not at then return end
+
+    local T    = Config.takeover or {}
+    local span = (T.DROP_MAX or 160.0) - (T.DROP_MIN or 90.0)
+
+    -- A road, out from the believed point by a random bearing and distance.
+    -- Random on purpose: arriving on the same corner every time would let a
+    -- robber learn where reinforcements come from, and the drop is meant to
+    -- be a unit that was already out here, not a delivery.
+    local node, heading = nil, 0.0
+
+    for _ = 1, 10 do
+        local angle    = math.random() * 6.2832
+        local distance = (T.DROP_MIN or 90.0) + math.random() * span
+
+        local ok, found, foundHeading = GetClosestVehicleNodeWithHeading(
+            at.x + math.cos(angle) * distance,
+            at.y + math.sin(angle) * distance,
+            at.z, 1, 3.0, 0)
+
+        if ok then node, heading = found, foundHeading break end
+    end
+
+    if not node then
+        return NickHUD.notify('~y~No unit close enough to take over. Drive.')
+    end
+
+    -- Behind a fade, like every other teleport in this mode: a player and a
+    -- car appearing somewhere else at full brightness reads as a glitch.
+    SBM.behindFade(function()
+        local old = GetVehiclePedIsIn(PlayerPedId(), false)
+
+        SetEntityCoords(PlayerPedId(), node.x, node.y, node.z + 1.0, false, false, false, false)
+        SetEntityHeading(PlayerPedId(), heading)
+        SBM.settleToGround(node.z)
+
+        -- The car you left behind goes with you - otherwise every takeover
+        -- litters the city with an abandoned cruiser, and the robber can read
+        -- the wreckage like a map of where the police have been.
+        if old ~= 0 and DoesEntityExist(old) and GetPedInVehicleSeat(old, -1) == 0 then
+            SetEntityAsMissionEntity(old, true, true)
+            DeleteEntity(old)
+        end
+
+        local car = dropRelief(vector3(node.x, node.y, node.z), nil)
+        if car and DoesEntityExist(car) then
+            TaskWarpPedIntoVehicle(PlayerPedId(), car, -1)
+        end
+    end)
+
+    NickHUD.notify(at.consumed
+        and '~b~You are that unit now.~w~ Its driver has gone home. Find him.'
+        or  '~b~Reassigned.~w~ Nearest we had to where we think he is.')
+end)
+
+-- ===== where the helicopters are parked =====
+-- Darren: "they should also be able to see multiple locations of where police
+-- helicopters are parked." Police only, for the whole round, so a copper who
+-- has spent his /heli calls still has somewhere to walk to.
+local padBlips = {}
+
+-- A global (within this resource's client environment) because nick:end is
+-- registered further up the file than this block: same lexical-scope rule
+-- that caught dropRelief, answered the other way round to keep the tidy-up
+-- next to the thing it tidies.
+function NickClearPadBlips()
+    for _, blip in ipairs(padBlips) do
+        if DoesBlipExist(blip) then RemoveBlip(blip) end
+    end
+    padBlips = {}
+end
+
+local clearPadBlips = NickClearPadBlips
+
+CreateThread(function()
+    while true do
+        Wait(2000)
+
+        local role, status = NickState()
+        local onDuty = role == 'police' and status.phase and status.phase ~= 'idle'
+
+        if onDuty and #padBlips == 0 then
+            for _, pad in ipairs(Config.locations.helipads or {}) do
+                local blip = AddBlipForCoord(pad.x, pad.y, pad.z)
+                SetBlipSprite(blip, 43) -- the helicopter glyph
+                SetBlipColour(blip, 3)
+                SetBlipScale(blip, 0.8)
+                SetBlipAsShortRange(blip, false)
+                BeginTextCommandSetBlipName('STRING')
+                AddTextComponentString(('Helicopter - %s'):format(pad.name or 'pad'))
+                EndTextCommandSetBlipName(blip)
+
+                padBlips[#padBlips + 1] = blip
+            end
+        elseif not onDuty and #padBlips > 0 then
+            clearPadBlips()
+        end
+
+        -- And a bird actually sat on the pad you walked to. Spawned on
+        -- APPROACH rather than at the whistle: four helicopters idling in
+        -- the sky from minute one is four helicopters OneSync has to think
+        -- about all round, and three of them will never be touched.
+        --
+        -- These are free and always there - the /heli ration is for having
+        -- one delivered to your feet, not for flying at all.
+        if onDuty then
+            local me = GetEntityCoords(PlayerPedId())
+
+            for _, pad in ipairs(Config.locations.helipads or {}) do
+                local at = vector3(pad.x, pad.y, pad.z)
+
+                if #(me - at) < ((Config.airUnit and Config.airUnit.PAD_SPAWN_WITHIN) or 120.0) then
+                    local taken = false
+
+                    for _, vehicle in ipairs(GetGamePool('CVehicle')) do
+                        if DoesEntityExist(vehicle)
+                            and IsThisModelAHeli(GetEntityModel(vehicle))
+                            and #(GetEntityCoords(vehicle) - at) < 25.0 then
+                            taken = true
+                            break
+                        end
+                    end
+
+                    if not taken then
+                        local hash = SBM.loadModel((Config.airUnit and Config.airUnit.MODEL) or 'polmav')
+
+                        if hash then
+                            RequestCollisionAtCoord(pad.x, pad.y, pad.z)
+
+                            local bird = CreateVehicle(hash, pad.x, pad.y, pad.z + 1.0,
+                                pad.h or 0.0, true, true)
+                            SetModelAsNoLongerNeeded(hash)
+
+                            if DoesEntityExist(bird) then
+                                SetVehicleOnGroundProperly(bird)
+                                SetVehicleDoorsLocked(bird, 1)
+                                fleet.track(bird)
+                                NickReportCar(bird)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end)
+
 -- ===== the piloted air unit =====
 -- Darren, game night: "as a police. can we spawn in our own Heli and then
 -- back down as a car?" - so she comes to HIM. A ten minute round cannot
@@ -557,11 +735,18 @@ RegisterNetEvent('nick:airUnitGo', function(pad)
     -- one of them is a landmark the robber can navigate by. Empty, far from
     -- the man who called her, for long enough: gone. Deleted through the
     -- tracker she is already in, not a new mechanism.
+    --
+    -- And the HANDOFF (Darren: "allowing the human cop to switch seats and
+    -- the helicopter despawn"): once she has done her job as a spotter and
+    -- the pilot gets out on the ground, she does not need to sit there being
+    -- a landmark for the rest of the round. Out of the seat, on the deck,
+    -- nobody aboard - she is gone in HANDOFF_AFTER_S rather than the full
+    -- abandonment minute.
     CreateThread(function()
-        local emptySince = 0
+        local emptySince, flown = 0, false
 
         while DoesEntityExist(heli) do
-            Wait(3000)
+            Wait(2000)
 
             local role2, status = NickState()
             if role2 ~= 'police' or not status.phase or status.phase == 'idle' then return end
@@ -571,17 +756,27 @@ RegisterNetEvent('nick:airUnitGo', function(pad)
                 if not IsVehicleSeatFree(heli, seat) then manned = true break end
             end
 
+            if manned then flown = true end
+
+            local grounded = not IsEntityInAir(heli)
             local far = #(GetEntityCoords(heli) - GetEntityCoords(PlayerPedId()))
                 > (A.ABANDON_DISTANCE or 120.0)
 
-            if manned or not far then
+            -- Two ways home: handed over (she flew, she landed, he got out)
+            -- or simply abandoned (left somewhere far behind).
+            local handedOver = flown and grounded and not manned
+            local gap = handedOver and (A.HANDOFF_AFTER_S or 20) or (A.ABANDON_AFTER_S or 60)
+
+            if manned or (not far and not handedOver) then
                 emptySince = 0
             else
                 if emptySince == 0 then emptySince = GetGameTimer() end
 
-                if GetGameTimer() - emptySince > (A.ABANDON_AFTER_S or 60) * 1000 then
+                if GetGameTimer() - emptySince > gap * 1000 then
                     if DoesEntityExist(heli) then DeleteEntity(heli) end
-                    NickHUD.notify('~b~Air unit recalled.~w~ She was getting cold.')
+                    NickHUD.notify(handedOver
+                        and '~b~Air unit released.~w~ She has gone back to the pad. It is a car chase now.'
+                        or  '~b~Air unit recalled.~w~ She was getting cold.')
                     return
                 end
             end
@@ -735,7 +930,9 @@ end)
 -- cost you the pursuit and not your evening: standing in a field listening to
 -- a chase you can hear and cannot reach is the fastest way to lose a player
 -- for ten minutes.
-local function dropRelief(at, announce)
+-- Assigned, not declared: the local is forward-declared up by agent smith,
+-- which needs the same function to put a taken-over copper in a car.
+function dropRelief(at, announce)
     local ok, node, heading = GetClosestVehicleNodeWithHeading(at.x, at.y, at.z, 1, 3.0, 0)
     if not ok then return nil end
 
@@ -905,5 +1102,6 @@ end)
 AddEventHandler('onResourceStop', function(resource)
     if resource ~= GetCurrentResourceName() then return end
     clearBlips()
+    NickClearPadBlips()
     fleet.sweep()
 end)

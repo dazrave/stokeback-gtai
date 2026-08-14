@@ -228,9 +228,11 @@ RegisterNetEvent('nick:go', function()
     if role ~= 'police' or not G.ENABLED then return end
 
     BeginTextCommandDisplayHelp('STRING')
-    AddTextComponentSubstringPlayerName(('Dispatch drives your GPS to its best guess - /%s re-says it. /%s puts a bird on the pad.')
-        :format(G.MANUAL_COMMAND or 'gps', (Config.airUnit and Config.airUnit.COMMAND) or 'heli'))
-    EndTextCommandDisplayHelp(0, false, true, 9000)
+    AddTextComponentSubstringPlayerName(('/%s re-says your GPS. /%s brings a helicopter to you. /%s takes over a unit near where we think he is.')
+        :format(G.MANUAL_COMMAND or 'gps',
+            (Config.airUnit and Config.airUnit.COMMAND) or 'heli',
+            (Config.takeover and Config.takeover.COMMAND) or 'smith'))
+    EndTextCommandDisplayHelp(0, false, true, 11000)
 end)
 
 AddEventHandler('onResourceStop', function(resource)

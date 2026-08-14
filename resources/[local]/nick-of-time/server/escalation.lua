@@ -34,8 +34,11 @@ local state = {
     heliUses    = 0,
     airUnits    = 0,  -- piloted helicopters granted this round (/heli)
     pingUntil   = 0,
+    airSpotUntil = 0, -- a human in a helicopter has him: ground units, now
+    takeovers   = {}, -- [src] = { count, at }: the agent smith ration book
     witnesses   = {}, -- pending calls, delivered late like a real 999
     witnessAt   = 0,  -- earliest moment the next call is accepted
+    lastNoise   = 0,  -- when the city last phoned anything in (sudden death)
     events      = {},
 }
 
@@ -92,8 +95,11 @@ function NickEscalation.reset()
         heliUses  = 0,
         airUnits  = 0,
         pingUntil = 0,
+        airSpotUntil = 0,
+        takeovers = {},
         witnesses = {},
         witnessAt = 0,
+        lastNoise = 0,
         events    = {},
     }
 end
@@ -334,6 +340,10 @@ function NickEscalation.witness(pos, kind)
     setState({
         witnesses = pending,
         witnessAt = GetGameTimer() + Config.witness.GAP_S * 1000,
+        -- Stamped when the call is RAISED, not when it lands: in sudden death
+        -- the noise is what breaks his quiet, and the noise happened when he
+        -- hit the bus stop, not when the operator got round to it.
+        lastNoise = GetGameTimer(),
     })
 end
 
@@ -394,12 +404,100 @@ end
 -- is NOT in here - it goes to police only, because "their heli is lit" tells
 -- the robber they have lost him, which is exactly the fact the pressure meter
 -- exists to withhold.
-function NickEscalation.publish(stars)
+-- `sudden` turns the whole force out (SUDDEN_AI_CARS): the extra three
+-- minutes are supposed to feel like a city looking for him, not like the same
+-- two cars mooching about. An air spotter summons ground units the same way
+-- for AIR_SPOT_HOLD_S - the helicopter's job is to START a car chase, not to
+-- be one.
+function NickEscalation.publish(stars, sudden)
+    local target = NickEscalation.target(stars)
+
+    if sudden then
+        target = math.max(target, math.min(E.AI_CARS_MAX, E.SUDDEN_AI_CARS or 0))
+    end
+
+    if state.airSpotUntil > GetGameTimer() then
+        target = math.max(target, math.min(E.AI_CARS_MAX, E.AIR_SPOT_AI_CARS or 0))
+    end
+
     return {
-        patrolTarget = NickEscalation.target(stars),
+        patrolTarget = target,
         relay        = state.relay,
         heliActive   = NickEscalation.pinging(),
     }
+end
+
+-- A human in a helicopter has eyes on him: ground units, now. Called from the
+-- sighting path, so it is gated by exactly the same LOS rule as everything
+-- else - no aircraft ever gets a free look.
+function NickEscalation.airSpotted()
+    local until_ = GetGameTimer() + (E.AIR_SPOT_HOLD_S or 45) * 1000
+    if until_ <= state.airSpotUntil then return false end
+
+    local fresh = state.airSpotUntil <= GetGameTimer()
+    setState({ airSpotUntil = until_ })
+
+    if fresh then push({ kind = 'airspot' }) end
+    return fresh
+end
+
+-- ===== agent smith =====
+-- The ration book for taking over a unit. The POSITION is not decided here -
+-- round.lua hands out dispatch's belief and nothing else - so this file never
+-- has to know where he actually is, which is how the no-radar rule survives a
+-- feature whose whole purpose is getting closer to him.
+function NickEscalation.takeoverAllowed(src)
+    local T = Config.takeover
+    if not T or not T.ENABLED then return false, 'nobody is taking over anything tonight.' end
+
+    local used = state.takeovers[src] or { count = 0, at = 0 }
+
+    if used.count >= (T.PER_ROUND or 3) then
+        return false, 'you have had your go at that. Drive like everyone else.'
+    end
+
+    local wait = (used.at + (T.COOLDOWN_S or 45) * 1000) - GetGameTimer()
+    if wait > 0 then
+        return false, ('not yet - %d seconds.'):format(math.ceil(wait / 1000))
+    end
+
+    return true
+end
+
+function NickEscalation.takeoverUsed(src)
+    local used = state.takeovers[src] or { count = 0, at = 0 }
+
+    local takeovers = {}
+    for id, entry in pairs(state.takeovers) do takeovers[id] = entry end
+    takeovers[src] = { count = used.count + 1, at = GetGameTimer() }
+
+    setState({ takeovers = takeovers })
+end
+
+-- The nearest patrol to a POINT (dispatch's belief, never the truth), so the
+-- copper taking over genuinely replaces a unit that was already there. The
+-- car is binned as he arrives: the force spends a patrol to put a human in
+-- the area rather than getting a free extra car out of it.
+function NickEscalation.consumePatrolNear(point, radius)
+    if not point then return false end
+
+    for id, patrol in pairs(state.patrols) do
+        local vehicle = resolve(patrol.veh)
+
+        if vehicle and #(GetEntityCoords(vehicle) - vector3(point.x, point.y, point.z)) < radius then
+            NickEscalation.dropPatrol(id)
+            return true
+        end
+    end
+
+    return false
+end
+
+-- When the city last phoned something in, for sudden death's "seen or heard"
+-- test. A timestamp rather than the queue: a call that has already been
+-- delivered has left the queue but absolutely still happened.
+function NickEscalation.lastNoiseAt()
+    return state.lastNoise or 0
 end
 
 function NickEscalation.policePublish()

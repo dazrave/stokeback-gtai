@@ -25,7 +25,7 @@ end
 -- "I can see him" - the server reads the position off its own copy of his ped.
 -- The range check is the anti-cheat half: a client claiming a sighting from
 -- the other side of the map is not looking at anything.
-RegisterNetEvent('nick:see', function()
+RegisterNetEvent('nick:see', function(fromAir)
     local src = source
     if NickRound.phase() ~= 'active' or src == NickRound.robber() then return end
     if robberVanished() then return end
@@ -43,6 +43,17 @@ RegisterNetEvent('nick:see', function()
     if gap > Config.detection.SIGHT_AIR_RANGE * 1.3 then return end
 
     NickDetect.sighting(at, 'eyes')
+
+    -- Spotted from the air: the helicopter's job is to START a car chase, so
+    -- ground units turn out. Checked against the server's own read of the
+    -- copper's vehicle rather than taken on trust from the event - a claim of
+    -- being airborne is exactly the sort of thing a modded client would make.
+    if fromAir then
+        local vehicle = GetVehiclePedIsIn(cop)
+        if vehicle and vehicle ~= 0 and DoesEntityExist(vehicle) then
+            NickEscalation.airSpotted()
+        end
+    end
 end)
 
 -- ===== the job =====
@@ -82,19 +93,10 @@ RegisterNetEvent('nick:cashCar', function()
     end
 end)
 
--- "Call it a day": stood inside a safehouse, he can stop the round himself.
--- The bag banks on the way out - he is physically AT the door, so ending the
--- round there and voiding the bag was a trap with a prompt (Rory walked with
--- £0 over a £6,428 bag on the default map's first night). Checked here as
--- well as on his screen, or a robber about to be cuffed could end the round
--- from the driver's seat and rob the law of the arrest.
-RegisterNetEvent('nick:callItADay', function()
-    local src = source
-    if NickRound.phase() ~= 'active' or src ~= NickRound.robber() then return end
-    if not NickHeist.callIt(NickRound.pos()) then return end
-
-    exports.core:EndGametype('called-it')
-end)
+-- (The robber used to be able to end the round himself from inside a
+-- safehouse. He cannot any more - Darren's rewrite: the clock ends the round
+-- and nothing else does, because a man who can stop the game the moment he is
+-- ahead is not being chased. The door still banks the bag; see nick:stash.)
 
 -- ===== the catch =====
 
@@ -162,6 +164,55 @@ RegisterNetEvent('nick:witness', function(kind)
     -- new kinds of emergency.
     local saw = (kind == 'swap' and 'swap') or (kind == 'gunfire' and 'gunfire') or 'crash'
     NickEscalation.witness(NickRound.pos(), saw)
+end)
+
+-- ===== agent smith =====
+-- Darren: "cops should be able to 'agent smith' and morph into the nearest ai
+-- police car to the suspect and take over." The cure for "by the time we get
+-- there he's already gone" - because the two minute drive across town IS the
+-- reason he is always gone by the time they arrive.
+--
+-- THE NO-RADAR RULE IS THE WHOLE DESIGN HERE. The point handed back is
+-- dispatch's BELIEF - the same hard-lock position or drifting ghost the map
+-- already draws - and never NickRound.pos(). Take over on a cold trail and
+-- there is nothing to take over, which is precisely the pressure that keeps
+-- the finding game worth playing.
+RegisterNetEvent('nick:takeover', function()
+    local src = source
+    if NickRound.phase() ~= 'active' or src == NickRound.robber() then return end
+
+    local ok, why = NickEscalation.takeoverAllowed(src)
+    if not ok then
+        return TriggerClientEvent('nick:radio', src, why or 'no.')
+    end
+
+    -- What the FORCE thinks it knows, straight off the detection model.
+    local picture = NickDetect.publish()
+    if not picture.track then
+        return TriggerClientEvent('nick:radio', src,
+            'nothing to take over - we do not know where he is. Find him first.')
+    end
+
+    NickEscalation.takeoverUsed(src)
+
+    -- He replaces a unit that was already out there, if one is: the car is
+    -- binned as he arrives, so the force SPENDS a patrol to put a human in
+    -- the area instead of getting a free extra car out of it.
+    local T = Config.takeover
+    local consumed = NickEscalation.consumePatrolNear(picture.track, T.CONSUME_RADIUS or 200.0)
+
+    TriggerClientEvent('nick:takeoverGo', src, {
+        x = picture.track.x, y = picture.track.y, z = picture.track.z,
+        consumed = consumed,
+    })
+
+    -- His fair tell. Not where from and not who - just that one of them has
+    -- appeared out of nowhere somewhere near where the law thinks he is,
+    -- which is a feeling, not a fact (the pressure meter's whole doctrine).
+    if NickRound.robber() then
+        TriggerClientEvent('nick:purseNote', NickRound.robber(),
+            'A siren, close, that was not there a second ago.')
+    end
 end)
 
 -- Banding engagement, logged at state changes so "was the rubber band
